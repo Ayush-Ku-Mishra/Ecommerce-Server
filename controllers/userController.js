@@ -97,7 +97,7 @@ export const register = catchAsyncError(async (req, res, next) => {
     if (recentAttempts.length >= 3) {
       return next(
         new ErrorHandler(
-          "You have exceeded the maximum number of attempts (3 per 30 minutes). Please try again after 30 minutes.",
+          "You have exceeded the maximum number of attempts. Please try again later.",
           400
         )
       );
