@@ -39,9 +39,10 @@ import { removeUnverifiedAccounts } from "./automation/removeUnverifiedAccounts.
 import userRouter from "./routes/userRouter.js";
 
 // Enable CORS with your frontend URL from env
+const allowedOrigins = process.env.FRONTEND_URL.split(",");
 app.use(
   cors({
-    origin: [process.env.FRONTEND_URL],
+    origin: allowedOrigins,
     methods: ["GET", "POST", "PUT", "DELETE"],
     credentials: true,
   })
