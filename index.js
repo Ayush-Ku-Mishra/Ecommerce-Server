@@ -40,9 +40,20 @@ import userRouter from "./routes/userRouter.js";
 
 // Enable CORS with your frontend URL from env
 const allowedOrigins = process.env.FRONTEND_URL.split(",");
+console.log("Allowed Origins:", allowedOrigins); // Debug log
+console.log("Frontend URL env:", process.env.FRONTEND_URL); // Debug log
+
 app.use(
   cors({
-    origin: allowedOrigins,
+    origin: function (origin, callback) {
+      console.log("Request origin:", origin); // Debug log
+      if (!origin || allowedOrigins.includes(origin)) {
+        callback(null, true);
+      } else {
+        console.log("CORS blocked origin:", origin); // Debug log
+        callback(new Error('Not allowed by CORS'));
+      }
+    },
     methods: ["GET", "POST", "PUT", "DELETE"],
     credentials: true,
   })
