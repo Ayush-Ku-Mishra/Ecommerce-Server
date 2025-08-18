@@ -39,10 +39,12 @@ import { removeUnverifiedAccounts } from "./automation/removeUnverifiedAccounts.
 import userRouter from "./routes/userRouter.js";
 
 // Enable CORS with your frontend URL from env
-const allowedOrigins = process.env.FRONTEND_URL.split(",");
 app.use(
   cors({
-    origin: allowedOrigins,
+    origin: [
+      "http://localhost:5175",
+      "https://ecommerce-website-ayush.netlify.app",
+    ],
     methods: ["GET", "POST", "PUT", "DELETE"],
     credentials: true,
   })
