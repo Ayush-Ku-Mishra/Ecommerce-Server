@@ -1,0 +1,19 @@
+# Environment variable files (secrets)
+config.env
+.env
+
+# Dependency folder
+node_modules/
+
+# Logs
+*.log
+
+# OS files
+.DS_Store
+
+# Testing coverage
+coverage/
+
+# Build output
+build/
+dist/
