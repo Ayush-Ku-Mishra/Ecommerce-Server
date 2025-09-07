@@ -79,8 +79,15 @@ app.use(
       "http://localhost:5179",
       "https://ecommerce-website-ayush.netlify.app",
     ],
-    methods: ["GET", "POST", "PUT", "DELETE", "PATCH"],
+    methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"], // Add OPTIONS
     credentials: true,
+    allowedHeaders: [
+      "Content-Type",
+      "Authorization",
+      "Origin",
+      "X-Requested-With",
+      "Accept",
+    ], // Add more headers
   })
 );
 
@@ -106,8 +113,6 @@ app.use("/api/v1/address", AddressRouter);
 app.use("/api/v1/sizecharts", SizeChartRouter);
 app.use("/api/v1/slider", SliderRouter);
 app.use("/api/v1/logo", logoRouter);
-
-
 
 app.get("/debug/env", (req, res) => {
   res.json({
