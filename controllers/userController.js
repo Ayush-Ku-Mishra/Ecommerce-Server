@@ -5,6 +5,8 @@ import { sendEmail } from "../utils/sendEmail.js";
 import { sendToken } from "../utils/sendToken.js";
 import twilio from "twilio";
 import crypto from "crypto";
+import { v2 as cloudinary } from "cloudinary";
+import fs from "fs";
 
 // Function to initialize Twilio (called when needed, not at module load)
 function initializeTwilio() {
@@ -167,7 +169,7 @@ async function sendVerificationCode(
 
       await client.messages.create({
         body: `
-Your Pickora verification code is: ${verificationCode}
+REGISTER to your Pickora account using OTP: ${verificationCode}
 
 ⚠️ DO NOT share this code with anyone, including delivery agents.
 
@@ -236,7 +238,7 @@ function generateEmailTemplate(verificationCode) {
   `;
 }
 
-// FIXED VERIFY OTP - AMAZON/FLIPKART STYLE
+// FIXED VERIFY OTP - AMAZON/FLIPKART STYLE - Updates status and login date
 export const verifyOTP = catchAsyncError(async (req, res, next) => {
   const { email, otp, phone } = req.body;
 
@@ -322,17 +324,21 @@ export const verifyOTP = catchAsyncError(async (req, res, next) => {
       );
     }
 
-    // STEP 7: Mark account as verified
+    // STEP 7: Mark account as verified AND update status and login date
     user.accountVerified = true;
+    user.status = "active"; // ✅ Set status to active
+    user.last_login_date = new Date(); // ✅ Set last login date
     user.verificationCode = null;
     user.verificationCodeExpire = null;
     await user.save({ validateModifiedOnly: true });
+
+    console.log(`✅ User ${user.email} account verified and activated`);
 
     // STEP 8: Auto-login user after verification (like Amazon/Flipkart)
     sendToken(
       user,
       200,
-      "Account verified successfully! Welcome to Pickora.",
+      "Account registered successfully! Welcome to Pickora.",
       res
     );
   } catch (error) {
@@ -343,22 +349,46 @@ export const verifyOTP = catchAsyncError(async (req, res, next) => {
   }
 });
 
+// ✅ UPDATED LOGIN - Updates status to active and last login date
 export const login = catchAsyncError(async (req, res, next) => {
   const { email, password } = req.body;
   if (!email || !password) {
     return next(new ErrorHandler("Email and password are required.", 400));
   }
+
   const user = await User.findOne({ email, accountVerified: true }).select(
     "+password"
   );
+
   if (!user) {
-    return next(new ErrorHandler("Invalid email or password.", 400));
+    return next(new ErrorHandler("User not registered.", 400));
   }
+
+  // Check if user is suspended (but allow inactive users to login)
+  if (user.status === "suspended") {
+    return next(
+      new ErrorHandler(
+        "Account suspended. Contact Pickora team for assistance.",
+        400
+      )
+    );
+  }
+
   const isPasswordMatched = await user.comparePassword(password);
   if (!isPasswordMatched) {
     return next(new ErrorHandler("Invalid email or password.", 400));
   }
-  sendToken(user, 200, "User logged in successfully.", res);
+
+  // ✅ Update user status to active and set last login date
+  user.status = "active";
+  user.last_login_date = new Date();
+  await user.save({ validateModifiedOnly: true });
+
+  console.log(
+    `✅ User ${user.email} logged in successfully. Status: ${user.status}, Last login: ${user.last_login_date}`
+  );
+
+  sendToken(user, 200, "Login successful", res);
 });
 
 export const logout = catchAsyncError(async (req, res, next) => {
@@ -374,11 +404,16 @@ export const logout = catchAsyncError(async (req, res, next) => {
     });
 });
 
+// ✅ UPDATED getUser - Include status and last login date in response
 export const getUser = catchAsyncError(async (req, res, next) => {
   const user = req.user;
   res.status(200).json({
     success: true,
-    user,
+    user: {
+      ...user.toObject(),
+      status: user.status,
+      last_login_date: user.last_login_date,
+    },
   });
 });
 
@@ -419,6 +454,7 @@ export const forgotPassword = catchAsyncError(async (req, res, next) => {
   }
 });
 
+// ✅ UPDATED resetPassword - Updates status and login date after reset
 export const resetPassword = catchAsyncError(async (req, res, next) => {
   const { token } = req.params;
   const resetPasswordToken = crypto
@@ -447,7 +483,16 @@ export const resetPassword = catchAsyncError(async (req, res, next) => {
   user.password = req.body.password;
   user.resetPasswordToken = undefined;
   user.resetPasswordExpire = undefined;
+
+  // ✅ Update status and last login date after password reset
+  user.status = "active";
+  user.last_login_date = new Date();
+
   await user.save();
+
+  console.log(
+    `✅ User ${user.email} password reset successfully. Status: ${user.status}`
+  );
 
   sendToken(user, 200, "Reset Password Successfully.", res);
 });
@@ -519,5 +564,406 @@ export const resendOTP = catchAsyncError(async (req, res, next) => {
     return next(
       new ErrorHandler("Failed to resend OTP. Please try again.", 500)
     );
+  }
+});
+
+//Image Upload
+export const userAvatarController = catchAsyncError(async (req, res, next) => {
+  const userId = req.user?._id;
+  const file = req.file;
+
+  const options = {
+    user_filename: true,
+    unique_filename: false,
+    overwrite: false,
+    folder: 'user_avatars', // Organize in folders
+    transformation: [
+      { width: 300, height: 300, crop: "fill" }, // Optimize image size
+      { quality: "auto" } // Auto quality optimization
+    ]
+  };
+
+  if (!userId) {
+    return next(new ErrorHandler("User ID not found in request.", 400));
+  }
+
+  if (!file) {
+    return next(new ErrorHandler("No image file provided.", 400));
+  }
+
+  // Verify user exists
+  const user = await User.findById(userId);
+
+  if (!user) {
+    return next(new ErrorHandler("User not found.", 404));
+  }
+
+  try {
+    // Step 1: Get the old avatar URL to delete later
+    const oldAvatarUrl = user.avatar;
+    let oldPublicId = null;
+
+    // Extract public_id from old avatar URL if it exists and is from Cloudinary
+    if (oldAvatarUrl && oldAvatarUrl.includes('cloudinary.com')) {
+      try {
+        // Extract public_id from Cloudinary URL
+        // URL format: https://res.cloudinary.com/your-cloud/image/upload/v123456/user_avatars/filename.jpg
+        const urlParts = oldAvatarUrl.split('/');
+        const uploadIndex = urlParts.findIndex(part => part === 'upload');
+        if (uploadIndex !== -1 && urlParts[uploadIndex + 2]) {
+          // Get folder and filename part
+          const folderAndFile = urlParts.slice(uploadIndex + 2).join('/');
+          // Remove file extension
+          oldPublicId = folderAndFile.replace(/\.[^/.]+$/, "");
+        }
+      } catch (error) {
+        console.warn("Could not extract public_id from old avatar URL:", error);
+      }
+    }
+
+    // Step 2: Upload new image to Cloudinary
+    const result = await cloudinary.uploader.upload(file.path, options);
+    
+    // Step 3: Clean up local file
+    fs.unlinkSync(file.path);
+
+    // Step 4: Update user avatar in database
+    user.avatar = result.secure_url;
+    await user.save({ validateModifiedOnly: true });
+
+    // Step 5: Delete old image from Cloudinary (if exists)
+    if (oldPublicId) {
+      try {
+        await cloudinary.uploader.destroy(oldPublicId);
+        console.log(`Old avatar deleted: ${oldPublicId}`);
+      } catch (deleteError) {
+        // Don't fail the request if old image deletion fails
+        console.warn("Failed to delete old avatar:", deleteError);
+      }
+    }
+
+    res.status(200).json({
+      _id: userId,
+      avatar: result.secure_url,
+      success: true,
+      message: "Avatar uploaded & saved successfully.",
+      user: {
+        ...user.toObject(),
+        avatar: result.secure_url
+      }
+    });
+
+  } catch (error) {
+    console.error("Avatar upload error:", error);
+    
+    // Clean up local file if upload fails
+    if (fs.existsSync(file.path)) {
+      fs.unlinkSync(file.path);
+    }
+    
+    return next(
+      new ErrorHandler("Image upload failed. Please try again.", 500)
+    );
+  }
+});
+
+export const removeImageFromCloudinary = catchAsyncError(
+  async (req, res, next) => {
+    const userId = req.user?._id;
+    const imgUrl = req.query.img;
+
+    if (!userId) {
+      return next(new ErrorHandler("User ID not found in request.", 400));
+    }
+
+    if (!imgUrl) {
+      return next(new ErrorHandler("Image URL is required.", 400));
+    }
+
+    const urlArr = imgUrl.split("/");
+    const image = urlArr[urlArr.length - 1];
+    const imageName = image.split(".")[0];
+
+    if (!imageName) {
+      return next(new ErrorHandler("Invalid image URL.", 400));
+    }
+
+    // Remove image from Cloudinary
+    const result = await cloudinary.uploader.destroy(imageName);
+
+    if (result) {
+      // Find user and clear avatar field if it matches the removed image URL
+      const user = await User.findById(userId);
+      if (user && user.avatar === imgUrl) {
+        user.avatar = ""; // or null as per your schema
+        await user.save({ validateModifiedOnly: true });
+      }
+      return res
+        .status(200)
+        .json({
+          success: true,
+          message: "Image deleted and user avatar cleared.",
+          data: result,
+        });
+    }
+  }
+);
+
+
+export const updateProfile = catchAsyncError(async (req, res, next) => {
+  const userId = req.user._id;
+  const { name, phone, gender } = req.body;
+
+  if (!userId) {
+    return next(new ErrorHandler("User ID not found.", 400));
+  }
+
+  // Validate inputs
+  if (!name || name.trim().length < 2) {
+    return next(new ErrorHandler("Name must be at least 2 characters long.", 400));
+  }
+
+  if (phone && !/^\+?[\d\s\-\(\)]{10,}$/.test(phone)) {
+    return next(new ErrorHandler("Please enter a valid phone number.", 400));
+  }
+
+  if (gender && !['male', 'female', 'other'].includes(gender.toLowerCase())) {
+    return next(new ErrorHandler("Gender must be male, female, or other.", 400));
+  }
+
+  try {
+    const user = await User.findById(userId);
+    if (!user) {
+      return next(new ErrorHandler("User not found.", 404));
+    }
+
+    // Update only provided fields
+    if (name) user.name = name.trim();
+    if (phone) user.phone = phone.trim();
+    if (gender) user.gender = gender.toLowerCase();
+
+    await user.save({ validateModifiedOnly: true });
+
+    // Return updated user (without password)
+    const updatedUser = await User.findById(userId).select("-password -verificationCode -resetPasswordToken");
+
+    res.status(200).json({
+      success: true,
+      message: "Profile updated successfully.",
+      user: updatedUser,
+    });
+
+  } catch (error) {
+    console.error("Profile update error:", error);
+    return next(new ErrorHandler("Failed to update profile. Please try again.", 500));
+  }
+});
+
+// Change password
+export const changePassword = catchAsyncError(async (req, res, next) => {
+  const userId = req.user._id;
+  const { currentPassword, newPassword, confirmPassword } = req.body;
+
+  if (!userId) {
+    return next(new ErrorHandler("User ID not found.", 400));
+  }
+
+  if (!currentPassword || !newPassword || !confirmPassword) {
+    return next(new ErrorHandler("All password fields are required.", 400));
+  }
+
+  if (newPassword !== confirmPassword) {
+    return next(new ErrorHandler("New passwords do not match.", 400));
+  }
+
+  if (newPassword.length < 8) {
+    return next(new ErrorHandler("New password must be at least 8 characters long.", 400));
+  }
+
+  if (newPassword.length > 32) {
+    return next(new ErrorHandler("New password cannot exceed 32 characters.", 400));
+  }
+
+  if (currentPassword === newPassword) {
+    return next(new ErrorHandler("New password must be different from current password.", 400));
+  }
+
+  try {
+    // Get user with password
+    const user = await User.findById(userId).select("+password");
+    if (!user) {
+      return next(new ErrorHandler("User not found.", 404));
+    }
+
+    // Check if user has a password (for social login users)
+    if (!user.password) {
+      return next(new ErrorHandler("Cannot change password for social login accounts.", 400));
+    }
+
+    // Verify current password
+    const isCurrentPasswordValid = await user.comparePassword(currentPassword);
+    if (!isCurrentPasswordValid) {
+      return next(new ErrorHandler("Current password is incorrect.", 400));
+    }
+
+    // Update password (pre-save middleware will hash it)
+    user.password = newPassword;
+    await user.save();
+
+    res.status(200).json({
+      success: true,
+      message: "Password changed successfully.",
+    });
+
+  } catch (error) {
+    console.error("Password change error:", error);
+    return next(new ErrorHandler("Failed to change password. Please try again.", 500));
+  }
+});
+
+export const getUsersCount = catchAsyncError(async (req, res, next) => {
+  try {
+    const userCount = await User.countDocuments({});
+    res.status(200).json({
+      success: true,
+      count: userCount,
+      message: "User count retrieved",
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: error.message || "Failed to get user count",
+    });
+  }
+});
+
+// Get all users (with pagination and search)
+export const getAllUsers = catchAsyncError(async (req, res, next) => {
+  try {
+    const { page = 1, limit = 50, search = "" } = req.query;
+    
+    // Build search query
+    let query = {};
+    if (search) {
+      query = {
+        $or: [
+          { name: { $regex: search, $options: 'i' } },
+          { email: { $regex: search, $options: 'i' } },
+          { phone: { $regex: search, $options: 'i' } }
+        ]
+      };
+    }
+
+    // Calculate pagination
+    const skip = (parseInt(page) - 1) * parseInt(limit);
+    
+    // Get users with pagination
+    const users = await User.find(query)
+      .select('-password -verificationCode -resetPasswordToken')
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(parseInt(limit));
+
+    const totalUsers = await User.countDocuments(query);
+
+    res.status(200).json({
+      success: true,
+      users,
+      totalUsers,
+      currentPage: parseInt(page),
+      totalPages: Math.ceil(totalUsers / parseInt(limit))
+    });
+  } catch (error) {
+    console.error('Get all users error:', error);
+    next(new ErrorHandler('Failed to fetch users', 500));
+  }
+});
+
+// Delete single user
+export const deleteUser = catchAsyncError(async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    
+    const user = await User.findById(id);
+    if (!user) {
+      return next(new ErrorHandler('User not found', 404));
+    }
+
+    // Prevent admin from deleting themselves
+    if (req.user._id.toString() === id) {
+      return next(new ErrorHandler('Cannot delete your own account', 400));
+    }
+
+    // Delete user's avatar from Cloudinary if exists
+    if (user.avatar && user.avatar.includes('cloudinary.com')) {
+      try {
+        const urlParts = user.avatar.split('/');
+        const uploadIndex = urlParts.findIndex(part => part === 'upload');
+        if (uploadIndex !== -1 && urlParts[uploadIndex + 2]) {
+          const folderAndFile = urlParts.slice(uploadIndex + 2).join('/');
+          const publicId = folderAndFile.replace(/\.[^/.]+$/, "");
+          await cloudinary.uploader.destroy(publicId);
+        }
+      } catch (cloudinaryError) {
+        console.warn('Failed to delete user avatar from Cloudinary:', cloudinaryError);
+      }
+    }
+
+    await User.findByIdAndDelete(id);
+
+    res.status(200).json({
+      success: true,
+      message: 'User deleted successfully'
+    });
+  } catch (error) {
+    console.error('Delete user error:', error);
+    next(new ErrorHandler('Failed to delete user', 500));
+  }
+});
+
+// Bulk delete users
+export const bulkDeleteUsers = catchAsyncError(async (req, res, next) => {
+  try {
+    const { userIds } = req.body;
+    
+    if (!userIds || !Array.isArray(userIds) || userIds.length === 0) {
+      return next(new ErrorHandler('User IDs are required', 400));
+    }
+
+    // Prevent admin from deleting themselves
+    if (userIds.includes(req.user._id.toString())) {
+      return next(new ErrorHandler('Cannot delete your own account', 400));
+    }
+
+    // Get users to delete their avatars
+    const usersToDelete = await User.find({ _id: { $in: userIds } });
+    
+    // Delete avatars from Cloudinary
+    for (const user of usersToDelete) {
+      if (user.avatar && user.avatar.includes('cloudinary.com')) {
+        try {
+          const urlParts = user.avatar.split('/');
+          const uploadIndex = urlParts.findIndex(part => part === 'upload');
+          if (uploadIndex !== -1 && urlParts[uploadIndex + 2]) {
+            const folderAndFile = urlParts.slice(uploadIndex + 2).join('/');
+            const publicId = folderAndFile.replace(/\.[^/.]+$/, "");
+            await cloudinary.uploader.destroy(publicId);
+          }
+        } catch (cloudinaryError) {
+          console.warn(`Failed to delete avatar for user ${user._id}:`, cloudinaryError);
+        }
+      }
+    }
+
+    const result = await User.deleteMany({ _id: { $in: userIds } });
+
+    res.status(200).json({
+      success: true,
+      message: `${result.deletedCount} users deleted successfully`,
+      deletedCount: result.deletedCount
+    });
+  } catch (error) {
+    console.error('Bulk delete users error:', error);
+    next(new ErrorHandler('Failed to delete users', 500));
   }
 });

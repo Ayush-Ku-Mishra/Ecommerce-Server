@@ -19,7 +19,7 @@ const addressSchema = new mongoose.Schema(
       type: String,
       required: true,
     }, // Mobile number
-    street: {
+    locality: {
       type: String,
       required: true,
     },
@@ -28,10 +28,6 @@ const addressSchema = new mongoose.Schema(
       required: true,
     },
     state: {
-      type: String,
-      required: true,
-    },
-    country: {
       type: String,
       required: true,
     },
@@ -47,11 +43,16 @@ const addressSchema = new mongoose.Schema(
       type: Boolean,
       default: false,
     }, // Default shipping address
+    type: {
+      type: String,
+      enum: ["Home", "Work"],
+      default: "Home",
+    },
   },
   {
     timestamps: true,
   }
 );
 
-const Address = mongoose.model("Address", addressSchema);
-export default Address;
+const AddressModel = mongoose.model("address", addressSchema);
+export default AddressModel;

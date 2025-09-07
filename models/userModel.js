@@ -14,7 +14,11 @@ const userSchema = new mongoose.Schema({
   },
   phone: String,
   image: String, // Added for social login (stores profile image)
-  googleId: String, // (Optional) Store Google account ID for social login
+  googleId: {
+    type: String,
+    default: null,
+    sparse: true, // Allows multiple null values but unique non-null values
+  },
   accountVerified: { type: Boolean, default: false },
   verificationCode: Number,
   verificationCodeExpire: Date,
@@ -23,6 +27,44 @@ const userSchema = new mongoose.Schema({
   createdAt: {
     type: Date,
     default: Date.now,
+  },
+
+  // ✅ Added fields from the other schema
+  avatar: {
+    type: String,
+    default: "",
+  },
+  last_login_date: {
+    type: Date,
+    default: null,
+  },
+  status: {
+    type: String,
+    enum: ["active", "inactive", "suspended"],
+    default: "inactive",
+  },
+  address_details: [
+    {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "address",
+    },
+  ],
+  shopping_cart: [
+    {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "cartProduct",
+    },
+  ],
+  order_history: [
+    {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "order",
+    },
+  ],
+  role: {
+    type: String,
+    enum: ["user", "admin"],
+    default: "user",
   },
 });
 
