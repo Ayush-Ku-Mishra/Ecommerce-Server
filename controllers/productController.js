@@ -273,24 +273,59 @@ export const getAllProductsByCatId = catchAsyncError(async (req, res, next) => {
 export const getAllProductsByCatName = catchAsyncError(
   async (req, res, next) => {
     try {
+      console.log("getAllProductsByCatName controller called"); // Debug log
+      console.log("Query params:", req.query); // Debug log
+
       const page = parseInt(req.query.page) || 1;
       const perPage = parseInt(req.query.perPage) || 10000;
-      const totalPosts = await productModel.countDocuments();
+
+      const categoryName = req.query.categoryName;
+      if (!categoryName) {
+        return res.status(400).json({
+          success: false,
+          message: "Category name is required.",
+        });
+      }
+
+      console.log(`Searching for category: ${categoryName}`); // Debug log
+
+      // Case-insensitive search using regex
+      const products = await productModel
+        .find({
+          categoryName: {
+            $regex: new RegExp(`^${categoryName}$`, "i"),
+          },
+        })
+        .populate("category")
+        .skip((page - 1) * perPage)
+        .limit(perPage)
+        .exec();
+
+      // Debug: Log first product to see raw data
+      if (products.length > 0) {
+        console.log(
+          "Raw product from DB:",
+          JSON.stringify(products[0], null, 2)
+        );
+      }
+
+      // Get total count with the same filter
+      const totalPosts = await productModel.countDocuments({
+        categoryName: {
+          $regex: new RegExp(`^${categoryName}$`, "i"),
+        },
+      });
+
       const totalPages = Math.ceil(totalPosts / perPage);
 
-      if (page > totalPages) {
+      console.log(`Found ${products.length} products, Total: ${totalPosts}`); // Debug log
+
+      if (page > totalPages && totalPages > 0) {
         return res.status(404).json({
           success: false,
           message: "Page not found.",
         });
       }
-
-      const products = await productModel
-        .find({ categoryName: req.query.categoryName })
-        .populate("category")
-        .skip((page - 1) * perPage)
-        .limit(perPage)
-        .exec();
 
       if (!products.length) {
         return res.status(404).json({
@@ -307,7 +342,7 @@ export const getAllProductsByCatName = catchAsyncError(
         page: page,
       });
     } catch (error) {
-      console.error("Get all products error:", error);
+      console.error("Get products by category error:", error);
       return next(
         new ErrorHandler("Failed to fetch products. Please try again.", 500)
       );
@@ -969,5 +1004,26 @@ export const updateProduct = catchAsyncError(async (req, res, next) => {
     return next(
       new ErrorHandler("Failed to update product. Please try again.", 500)
     );
+  }
+});
+
+export const getRelatedProducts = catchAsyncError(async (req, res, next) => {
+  try {
+    const { productId, categoryName, limit = 10 } = req.query;
+    
+    const relatedProducts = await productModel
+      .find({
+        _id: { $ne: productId }, // Exclude current product
+        categoryName: categoryName,
+      })
+      .limit(parseInt(limit))
+      .populate("category");
+    
+    res.status(200).json({
+      success: true,
+      products: relatedProducts,
+    });
+  } catch (error) {
+    return next(new ErrorHandler("Failed to fetch related products", 500));
   }
 });

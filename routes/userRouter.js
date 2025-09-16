@@ -16,6 +16,11 @@ import {
   getAllUsers,
   deleteUser, 
   bulkDeleteUsers,
+  authWithGoogle, 
+  googleLogin,
+  setPasswordForGoogleUser,
+  setPassword,
+  getUsersByMonth,
 } from "../controllers/userController.js";
 import { isAuthenticated } from "../middlewares/auth.js";
 import { googleAuth } from "../controllers/authController.js";
@@ -49,6 +54,15 @@ router.get("/count", isAuthenticated, getUsersCount);
 router.get("/all", isAuthenticated, getAllUsers);
 router.delete("/bulk-delete", isAuthenticated, bulkDeleteUsers);
 router.delete("/:id", isAuthenticated, deleteUser);
+
+router.post("/authWithGoogle", authWithGoogle);
+router.post("/googleLogin", googleLogin);
+router.post("/setPasswordForGoogleUser", setPasswordForGoogleUser);
+
+router.put("/set-password", isAuthenticated, setPassword);
+
+router.get("/users-by-month", isAuthenticated, getUsersByMonth);
+
 
 
 

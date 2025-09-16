@@ -9,17 +9,46 @@ const orderSchema = new mongoose.Schema(
     },
     orderId: {
       type: String,
-      required: [true, "Provide orderId"],
+      required: true,
       unique: true,
     },
-    productId: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "Product",
-    },
-    product_details: {
-      name: String,
-      image: Array,
-    },
+    products: [
+      {
+        productId: {
+          type: String,
+          required: true,
+        },
+        name: {
+          type: String,
+          required: true,
+        },
+        brand: {
+          type: String,
+          required: true,
+        },
+        price: {
+          type: Number,
+          required: true,
+        },
+        originalPrice: {
+          type: Number,
+          required: true,
+        },
+        quantity: {
+          type: Number,
+          required: true,
+          min: 1,
+        },
+        selectedSize: {
+          type: String,
+          required: true,
+        },
+        image: {
+          type: String,
+          required: true,
+        },
+      },
+    ],
     paymentId: {
       type: String,
       default: "",
@@ -29,9 +58,49 @@ const orderSchema = new mongoose.Schema(
       enum: ["pending", "completed", "failed"],
       default: "pending",
     },
+    // Changed delivery_address to store embedded document instead of ObjectId reference
     delivery_address: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "address",
+      name: {
+        type: String,
+        required: true,
+      },
+      phone: {
+        type: String,
+        required: true,
+      },
+      address_line: {
+        type: String,
+        required: true,
+      },
+      locality: {
+        type: String,
+        required: true,
+      },
+      city: {
+        type: String,
+        required: true,
+      },
+      state: {
+        type: String,
+        required: true,
+      },
+      pincode: {
+        type: String,
+        required: true,
+      },
+      landmark: {
+        type: String,
+        default: "",
+      },
+      alternatePhone: {
+        type: String,
+        default: "",
+      },
+      type: {
+        type: String,
+        enum: ["Home", "Work", "Other"],
+        default: "Home",
+      },
     },
     subTotal_amount: {
       type: Number,
@@ -41,18 +110,19 @@ const orderSchema = new mongoose.Schema(
       type: Number,
       default: 0,
     },
-    quantity: {
-      type: Number,
-      default: 1,
-    },
     status: {
       type: String,
-      enum: ["pending", "paid", "shipped", "delivered"],
+      enum: ["pending", "paid", "processing", "shipped", "delivered", "cancelled"],
       default: "pending",
     },
     invoice_receipt: {
       type: String,
       default: "",
+    },
+    paymentMethod: {
+      type: String,
+      enum: ["ONLINE", "COD"],
+      required: true
     },
   },
   { timestamps: true }

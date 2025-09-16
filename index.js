@@ -22,6 +22,16 @@ console.log(
   process.env.CLOUDINARY_API_SECRET ? "✅ Loaded" : "❌ Missing"
 );
 
+// Add Razorpay environment variable checks
+console.log(
+  "RAZORPAY_KEY_ID:",
+  process.env.RAZORPAY_KEY_ID ? "✅ Loaded" : "❌ Missing"
+);
+console.log(
+  "RAZORPAY_KEY_SECRET:",
+  process.env.RAZORPAY_KEY_SECRET ? "✅ Loaded" : "❌ Missing"
+);
+
 import { v2 as cloudinary } from "cloudinary";
 
 cloudinary.config({
@@ -68,15 +78,19 @@ import CartRouter from "./routes/cartRouter.js";
 import WishlistRouter from "./routes/wishlistRouter.js";
 import AddressRouter from "./routes/addressRouter.js";
 import SizeChartRouter from "./routes/sizeChartRouter.js";
-import SliderRouter from "./routes/SliderRouter.js";
+
 import logoRouter from "./routes/logoRoutes.js";
+import reviewRouter from "./routes/ReviewRouter.js";
+import SliderRouter from "./routes/SliderRouter.js";
+import orderRouter from "./routes/orderRouter.js";
+import notificationRouter from "./routes/notificationRoutes.js";
 
 // Enable CORS with your frontend URL from env
 app.use(
   cors({
     origin: [
-      "http://localhost:5176",
-      "http://localhost:5179",
+      "http://localhost:5177",
+      "http://localhost:5180",
       "https://ecommerce-website-ayush.netlify.app",
     ],
     methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"], // Add OPTIONS
@@ -88,6 +102,7 @@ app.use(
       "X-Requested-With",
       "Accept",
     ], // Add more headers
+    optionsSuccessStatus: 200
   })
 );
 
@@ -113,6 +128,9 @@ app.use("/api/v1/address", AddressRouter);
 app.use("/api/v1/sizecharts", SizeChartRouter);
 app.use("/api/v1/slider", SliderRouter);
 app.use("/api/v1/logo", logoRouter);
+app.use("/api/v1/reviews", reviewRouter);
+app.use("/api/v1/payment", orderRouter);
+app.use("/api/v1/notifications", notificationRouter);
 
 app.get("/debug/env", (req, res) => {
   res.json({
@@ -123,6 +141,8 @@ app.get("/debug/env", (req, res) => {
     twilioToken: process.env.TWILIO_AUTH_TOKEN ? "Set" : "Not Set",
     twilioPhone: process.env.TWILIO_PHONE_NUMBER ? "Set" : "Not Set",
     frontendUrl: process.env.FRONTEND_URL,
+    razorpayKeyId: process.env.RAZORPAY_KEY_ID ? "Set" : "Not Set",
+    razorpayKeySecret: process.env.RAZORPAY_KEY_SECRET ? "Set" : "Not Set",
   });
 });
 

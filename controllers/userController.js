@@ -69,25 +69,31 @@ export const register = catchAsyncError(async (req, res, next) => {
       return next(new ErrorHandler("Invalid phone number.", 400));
     }
 
-    const existingUser = await User.findOne({
+    // Check for existing VERIFIED users first
+    const existingVerifiedUser = await User.findOne({
       $or: [
-        {
-          email,
-          accountVerified: true,
-        },
-        {
-          phone,
-          accountVerified: true,
-        },
+        { email, accountVerified: true },
+        { phone, accountVerified: true },
       ],
     });
 
-    if (existingUser) {
-      return next(new ErrorHandler("Phone or Email is already used.", 400));
+    if (existingVerifiedUser) {
+      return next(new ErrorHandler("Phone or Email is already registered. Please login instead.", 400));
     }
 
     const now = Date.now();
-    // Find unverified accounts created within last 30 minutes
+    
+    // Find and DELETE old unverified accounts with same email/phone
+    await User.deleteMany({
+      $or: [
+        { phone, accountVerified: false },
+        { email, accountVerified: false },
+      ],
+    });
+
+    console.log(`🗑️ Cleaned up old unverified accounts for ${email}/${phone}`);
+
+    // Check rate limiting for registration attempts from this IP/device
     const recentAttempts = await User.find({
       $or: [
         { phone, accountVerified: false },
@@ -100,7 +106,7 @@ export const register = catchAsyncError(async (req, res, next) => {
       return next(
         new ErrorHandler(
           "You have exceeded the maximum number of attempts. Please try again later.",
-          400
+          429
         )
       );
     }
@@ -110,11 +116,14 @@ export const register = catchAsyncError(async (req, res, next) => {
       email,
       phone,
       password,
+      signUpWithGoogle: false, // Explicitly set for manual registration
     };
 
     const user = await User.create(userData);
     const verificationCode = await user.generateVerificationCode();
-    await user.save();
+    await user.save({ validateModifiedOnly: true });
+
+    console.log(`✅ New user created: ${email}, OTP: ${verificationCode}`);
 
     await sendVerificationCode(
       verificationMethod,
@@ -126,6 +135,18 @@ export const register = catchAsyncError(async (req, res, next) => {
     );
   } catch (error) {
     console.error("❌ Registration error:", error);
+    
+    // Handle specific Mongoose validation errors
+    if (error.name === 'ValidationError') {
+      const messages = Object.values(error.errors).map(err => err.message);
+      return next(new ErrorHandler(messages.join('. '), 400));
+    }
+    
+    // Handle duplicate key errors (shouldn't happen now due to cleanup)
+    if (error.code === 11000) {
+      return next(new ErrorHandler("Email or phone already exists. Please login instead.", 400));
+    }
+    
     next(error);
   }
 });
@@ -215,6 +236,196 @@ Visit www.pickora.com for assistance.
     });
   }
 }
+
+export const authWithGoogle = catchAsyncError(async (req, res, next) => {
+  try {
+    const { name, email, avatar, phone, role = "user" } = req.body;
+
+    console.log("🔍 Google Auth Request:", { name, email, avatar: !!avatar, phone, role });
+
+    if (!name || !email) {
+      return next(new ErrorHandler("Name and email are required for Google authentication.", 400));
+    }
+
+    // Check if user already exists with this email (regardless of verification status)
+    let existingUser = await User.findOne({ email: email });
+
+    if (existingUser) {
+      console.log(`👤 Existing user found: ${existingUser.email}, Verified: ${existingUser.accountVerified}, Google: ${existingUser.signUpWithGoogle}`);
+      
+      // CASE 1: User exists and is verified (login scenario)
+      if (existingUser.accountVerified) {
+        // Update user info and login
+        existingUser.status = "active";
+        existingUser.last_login_date = new Date();
+        
+        // Update avatar if provided and different
+        if (avatar && existingUser.avatar !== avatar) {
+          existingUser.avatar = avatar;
+        }
+        
+        // If this was originally a manual account, mark it as also having Google access
+        if (!existingUser.signUpWithGoogle) {
+          existingUser.signUpWithGoogle = true;
+        }
+        
+        await existingUser.save({ validateModifiedOnly: true });
+
+        console.log(`✅ Google user ${existingUser.email} logged in successfully`);
+        
+        return sendToken(existingUser, 200, "Login successful!", res);
+      } 
+      // CASE 2: User exists but not verified (upgrade to Google account)
+      else {
+        console.log(`🔄 Converting unverified account to Google account for ${existingUser.email}`);
+        
+        // Convert to verified Google account
+        existingUser.accountVerified = true;
+        existingUser.status = "active";
+        existingUser.last_login_date = new Date();
+        existingUser.signUpWithGoogle = true;
+        existingUser.name = name; // Update name in case it changed
+        
+        if (avatar) existingUser.avatar = avatar;
+        
+        await existingUser.save({ validateModifiedOnly: true });
+        
+        console.log(`✅ Unverified account converted to Google account: ${existingUser.email}`);
+        
+        return sendToken(existingUser, 200, "Google account linked successfully! Welcome to Pickora.", res);
+      }
+    } else {
+      // CASE 3: New Google user - create account
+      console.log(`🆕 Creating new Google account for ${email}`);
+      
+      const newUserData = {
+        name: name,
+        email: email,
+        password: crypto.randomBytes(16).toString('hex'), // Shorter random password (32 chars when hashed)
+        phone: phone || null,
+        avatar: avatar || "",
+        role: role,
+        accountVerified: true, // Google accounts are pre-verified
+        status: "active", // Set as active immediately
+        last_login_date: new Date(),
+        signUpWithGoogle: true,
+        hasGooglePassword: false, // They haven't set a manual password yet
+      };
+
+      const newUser = await User.create(newUserData);
+      
+      console.log(`✅ New Google user created: ${newUser.email}`);
+      
+      return sendToken(newUser, 201, "Google account created successfully! Welcome to Pickora.", res);
+    }
+    
+  } catch (error) {
+    console.error("❌ Google authentication error:", error);
+    
+    // Handle validation errors specifically
+    if (error.name === 'ValidationError') {
+      const messages = Object.values(error.errors).map(err => err.message);
+      return next(new ErrorHandler(`Validation failed: ${messages.join('. ')}`, 400));
+    }
+    
+    // Handle duplicate key errors
+    if (error.code === 11000) {
+      return next(new ErrorHandler("An account with this email already exists.", 400));
+    }
+    
+    return next(new ErrorHandler("Google authentication failed. Please try again.", 500));
+  }
+});
+
+export const googleLogin = catchAsyncError(async (req, res, next) => {
+  try {
+    const { email } = req.body;
+
+    if (!email) {
+      return next(new ErrorHandler("Email is required.", 400));
+    }
+
+    // Find user by email (must be Google user and verified)
+    const user = await User.findOne({ 
+      email, 
+      accountVerified: true,
+      signUpWithGoogle: true 
+    });
+
+    if (!user) {
+      return next(new ErrorHandler("Google account not found. Please sign up with Google first.", 404));
+    }
+
+    // Check if user is suspended
+    if (user.status === "suspended") {
+      return next(
+        new ErrorHandler(
+          "Account suspended. Contact Pickora team for assistance.",
+          403
+        )
+      );
+    }
+
+    // Update user status to active and set last login date
+    user.status = "active";
+    user.last_login_date = new Date();
+    await user.save({ validateModifiedOnly: true });
+
+    console.log(`✅ Google login successful for ${user.email}`);
+
+    sendToken(user, 200, "Google login successful!", res);
+  } catch (error) {
+    console.error("❌ Google login error:", error);
+    return next(new ErrorHandler("Google login failed. Please try again.", 500));
+  }
+});
+
+// New function for Google users to set a manual password
+export const setPasswordForGoogleUser = catchAsyncError(async (req, res, next) => {
+  try {
+    const { email, newPassword } = req.body;
+
+    if (!email || !newPassword) {
+      return next(new ErrorHandler("Email and new password are required.", 400));
+    }
+
+    if (newPassword.length < 6) {
+      return next(new ErrorHandler("Password must be at least 6 characters long.", 400));
+    }
+
+    const user = await User.findOne({ 
+      email, 
+      accountVerified: true,
+      signUpWithGoogle: true 
+    });
+
+    if (!user) {
+      return next(new ErrorHandler("Google account not found.", 404));
+    }
+
+    // Set the new password
+    user.password = newPassword; // Will be hashed by pre-save middleware
+    user.hasGooglePassword = true;
+    await user.save();
+
+    console.log(`✅ Password set for Google user: ${user.email}`);
+
+    res.status(200).json({
+      success: true,
+      message: "Password set successfully! You can now login with email and password.",
+    });
+
+  } catch (error) {
+    console.error("❌ Set password error:", error);
+    
+    if (error.name === 'ValidationError') {
+      const messages = Object.values(error.errors).map(err => err.message);
+      return next(new ErrorHandler(messages.join('. '), 400));
+    }
+    
+    return next(new ErrorHandler("Failed to set password. Please try again.", 500));
+  }
+});
 
 // Rest of your functions remain the same...
 function generateEmailTemplate(verificationCode) {
@@ -770,7 +981,59 @@ export const updateProfile = catchAsyncError(async (req, res, next) => {
   }
 });
 
-// Change password
+// Add this new function to your user controller
+export const setPassword = catchAsyncError(async (req, res, next) => {
+  const userId = req.user._id;
+  const { newPassword, confirmPassword } = req.body;
+
+  if (!userId) {
+    return next(new ErrorHandler("User ID not found.", 400));
+  }
+
+  if (!newPassword || !confirmPassword) {
+    return next(new ErrorHandler("Password and confirm password are required.", 400));
+  }
+
+  if (newPassword !== confirmPassword) {
+    return next(new ErrorHandler("Passwords do not match.", 400));
+  }
+
+  if (newPassword.length < 8) {
+    return next(
+      new ErrorHandler("Password must be at least 8 characters long.", 400)
+    );
+  }
+
+  if (newPassword.length > 32) {
+    return next(
+      new ErrorHandler("Password cannot exceed 32 characters.", 400)
+    );
+  }
+
+  try {
+    // Get user
+    const user = await User.findById(userId);
+    if (!user) {
+      return next(new ErrorHandler("User not found.", 404));
+    }
+
+    // Set/Update password (pre-save middleware will hash it)
+    user.password = newPassword;
+    await user.save();
+
+    res.status(200).json({
+      success: true,
+      message: "Password set successfully.",
+    });
+  } catch (error) {
+    console.error("Password set error:", error);
+    return next(
+      new ErrorHandler("Failed to set password. Please try again.", 500)
+    );
+  }
+});
+
+// Also, update your existing changePassword function to handle both cases
 export const changePassword = catchAsyncError(async (req, res, next) => {
   const userId = req.user._id;
   const { currentPassword, newPassword, confirmPassword } = req.body;
@@ -779,8 +1042,8 @@ export const changePassword = catchAsyncError(async (req, res, next) => {
     return next(new ErrorHandler("User ID not found.", 400));
   }
 
-  if (!currentPassword || !newPassword || !confirmPassword) {
-    return next(new ErrorHandler("All password fields are required.", 400));
+  if (!newPassword || !confirmPassword) {
+    return next(new ErrorHandler("New password and confirm password are required.", 400));
   }
 
   if (newPassword !== confirmPassword) {
@@ -799,15 +1062,6 @@ export const changePassword = catchAsyncError(async (req, res, next) => {
     );
   }
 
-  if (currentPassword === newPassword) {
-    return next(
-      new ErrorHandler(
-        "New password must be different from current password.",
-        400
-      )
-    );
-  }
-
   try {
     // Get user with password
     const user = await User.findById(userId).select("+password");
@@ -817,9 +1071,25 @@ export const changePassword = catchAsyncError(async (req, res, next) => {
 
     // Check if user has a password (for social login users)
     if (!user.password) {
+      // If no password exists, allow setting password without current password
+      user.password = newPassword;
+      await user.save();
+
+      return res.status(200).json({
+        success: true,
+        message: "Password set successfully.",
+      });
+    }
+
+    // If user has existing password, require current password
+    if (!currentPassword) {
+      return next(new ErrorHandler("Current password is required.", 400));
+    }
+
+    if (currentPassword === newPassword) {
       return next(
         new ErrorHandler(
-          "Cannot change password for social login accounts.",
+          "New password must be different from current password.",
           400
         )
       );
@@ -840,7 +1110,7 @@ export const changePassword = catchAsyncError(async (req, res, next) => {
       message: "Password changed successfully.",
     });
   } catch (error) {
-    console.error("Password change error:", error);
+    console.error("Password change/set error:", error);
     return next(
       new ErrorHandler("Failed to change password. Please try again.", 500)
     );
@@ -999,3 +1269,23 @@ export const bulkDeleteUsers = catchAsyncError(async (req, res, next) => {
     next(new ErrorHandler("Failed to delete users", 500));
   }
 });
+
+
+// Get users count grouped by month
+export const getUsersByMonth = async (req, res) => {
+  try {
+    const result = await User.aggregate([
+      {
+        $group: {
+          _id: { $month: "$createdAt" },
+          count: { $sum: 1 }
+        }
+      },
+      { $sort: { _id: 1 } }
+    ]);
+
+    res.json({ success: true, data: result });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};

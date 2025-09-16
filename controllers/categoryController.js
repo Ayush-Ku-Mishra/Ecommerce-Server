@@ -14,6 +14,16 @@ export const uploadImages = catchAsyncError(async (req, res, next) => {
       user_filename: true,
       unique_filename: false,
       overwrite: false,
+      // Add transformation during upload
+      transformation: [
+        {
+          width: 96,
+          height: 96,
+          crop: "fill",
+          format: "auto",
+          quality: "auto"
+        }
+      ]
     };
 
     for (const file of files) {
@@ -30,7 +40,7 @@ export const uploadImages = catchAsyncError(async (req, res, next) => {
     return res.status(200).json({
       success: true,
       images: imagesArr,
-      message: "Images uploaded successfully.",
+      message: "Images uploaded and resized successfully.",
     });
   } catch (error) {
     console.error("Upload images error:", error);

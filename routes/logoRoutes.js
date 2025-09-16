@@ -12,7 +12,7 @@ import upload from "../middlewares/multer.js";
 
 const logoRouter = express.Router();
 
-logoRouter.get("/all", isAuthenticated, getAllLogos);
+logoRouter.get("/all", getAllLogos);
 logoRouter.post("/", isAuthenticated, createLogo);
 logoRouter.put("/:id", isAuthenticated, updateLogo);
 logoRouter.delete("/:id", isAuthenticated, deleteLogo);

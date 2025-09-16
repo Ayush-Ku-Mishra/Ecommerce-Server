@@ -21,6 +21,7 @@ import {
   getProduct,
   removeImageFromCloudinary,
   updateProduct,
+  getRelatedProducts,
 } from "../controllers/productController.js";
 
 const ProductRouter = express.Router();
@@ -70,5 +71,6 @@ ProductRouter.delete(
   removeImageFromCloudinary
 );
 ProductRouter.put("/update/:id", isAuthenticated, updateProduct);
+ProductRouter.get("/getRelatedProducts", isAuthenticated, getRelatedProducts);
 
 export default ProductRouter;
