@@ -239,12 +239,25 @@ Visit www.pickora.com for assistance.
 
 export const authWithGoogle = catchAsyncError(async (req, res, next) => {
   try {
-    const { name, email, avatar, phone, role = "user" } = req.body;
+    const { name, email, avatar, phone, role = "user", isAdminLogin = false } = req.body;
 
     console.log("🔍 Google Auth Request:", { name, email, avatar: !!avatar, phone, role });
 
     if (!name || !email) {
       return next(new ErrorHandler("Name and email are required for Google authentication.", 400));
+    }
+
+    // Whitelist of allowed admin emails
+    const allowedAdminEmails = ["admin@example.com", "admin2@example.com"];
+
+    // If this login is for admin panel, enforce whitelist and role check
+    if (isAdminLogin) {
+      if (!allowedAdminEmails.includes(email)) {
+        return next(new ErrorHandler("Access denied: unauthorized email.", 403));
+      }
+      if (role !== "admin") {
+        return next(new ErrorHandler("Access denied: user is not an admin.", 403));
+      }
     }
 
     // Check if user already exists with this email (regardless of verification status)
@@ -255,97 +268,108 @@ export const authWithGoogle = catchAsyncError(async (req, res, next) => {
       
       // CASE 1: User exists and is verified (login scenario)
       if (existingUser.accountVerified) {
-        // Update user info and login
         existingUser.status = "active";
         existingUser.last_login_date = new Date();
-        
-        // Update avatar if provided and different
+
         if (avatar && existingUser.avatar !== avatar) {
           existingUser.avatar = avatar;
         }
-        
-        // If this was originally a manual account, mark it as also having Google access
+
         if (!existingUser.signUpWithGoogle) {
           existingUser.signUpWithGoogle = true;
         }
-        
+
         await existingUser.save({ validateModifiedOnly: true });
 
         console.log(`✅ Google user ${existingUser.email} logged in successfully`);
         
         return sendToken(existingUser, 200, "Login successful!", res);
-      } 
+      }
       // CASE 2: User exists but not verified (upgrade to Google account)
       else {
         console.log(`🔄 Converting unverified account to Google account for ${existingUser.email}`);
-        
-        // Convert to verified Google account
+
         existingUser.accountVerified = true;
         existingUser.status = "active";
         existingUser.last_login_date = new Date();
         existingUser.signUpWithGoogle = true;
-        existingUser.name = name; // Update name in case it changed
-        
+        existingUser.name = name;
         if (avatar) existingUser.avatar = avatar;
-        
+
         await existingUser.save({ validateModifiedOnly: true });
-        
+
         console.log(`✅ Unverified account converted to Google account: ${existingUser.email}`);
-        
+
         return sendToken(existingUser, 200, "Google account linked successfully! Welcome to Pickora.", res);
       }
     } else {
       // CASE 3: New Google user - create account
-      console.log(`🆕 Creating new Google account for ${email}`);
       
+      // If admin login, ensure email is whitelisted
+      if (isAdminLogin && !allowedAdminEmails.includes(email)) {
+        return next(new ErrorHandler("Access denied: unauthorized email.", 403));
+      }
+      
+      // If admin login, set role to admin explicitly
+      const userRole = isAdminLogin ? "admin" : role;
+
+      console.log(`🆕 Creating new Google account for ${email}`);
+
       const newUserData = {
         name: name,
         email: email,
-        password: crypto.randomBytes(16).toString('hex'), // Shorter random password (32 chars when hashed)
+        password: crypto.randomBytes(16).toString('hex'),
         phone: phone || null,
         avatar: avatar || "",
-        role: role,
-        accountVerified: true, // Google accounts are pre-verified
-        status: "active", // Set as active immediately
+        role: userRole,
+        accountVerified: true,
+        status: "active",
         last_login_date: new Date(),
         signUpWithGoogle: true,
-        hasGooglePassword: false, // They haven't set a manual password yet
+        hasGooglePassword: false,
       };
 
       const newUser = await User.create(newUserData);
-      
+
       console.log(`✅ New Google user created: ${newUser.email}`);
-      
+
       return sendToken(newUser, 201, "Google account created successfully! Welcome to Pickora.", res);
     }
     
   } catch (error) {
     console.error("❌ Google authentication error:", error);
-    
-    // Handle validation errors specifically
+
     if (error.name === 'ValidationError') {
       const messages = Object.values(error.errors).map(err => err.message);
       return next(new ErrorHandler(`Validation failed: ${messages.join('. ')}`, 400));
     }
-    
-    // Handle duplicate key errors
+
     if (error.code === 11000) {
       return next(new ErrorHandler("An account with this email already exists.", 400));
     }
-    
+
     return next(new ErrorHandler("Google authentication failed. Please try again.", 500));
   }
 });
 
+
 export const googleLogin = catchAsyncError(async (req, res, next) => {
   try {
-    const { email } = req.body;
+    const { email, isAdminLogin = false } = req.body;
 
     if (!email) {
       return next(new ErrorHandler("Email is required.", 400));
     }
 
-    // Find user by email (must be Google user and verified)
+    // Whitelist of allowed admin emails
+    const allowedAdminEmails = ["admin@example.com", "admin2@example.com"];
+
+    if (isAdminLogin) {
+      if (!allowedAdminEmails.includes(email)) {
+        return next(new ErrorHandler("Access denied: unauthorized email.", 403));
+      }
+    }
+
     const user = await User.findOne({ 
       email, 
       accountVerified: true,
@@ -356,17 +380,10 @@ export const googleLogin = catchAsyncError(async (req, res, next) => {
       return next(new ErrorHandler("Google account not found. Please sign up with Google first.", 404));
     }
 
-    // Check if user is suspended
     if (user.status === "suspended") {
-      return next(
-        new ErrorHandler(
-          "Account suspended. Contact Pickora team for assistance.",
-          403
-        )
-      );
+      return next(new ErrorHandler("Account suspended. Contact Pickora team for assistance.", 403));
     }
 
-    // Update user status to active and set last login date
     user.status = "active";
     user.last_login_date = new Date();
     await user.save({ validateModifiedOnly: true });
@@ -379,6 +396,7 @@ export const googleLogin = catchAsyncError(async (req, res, next) => {
     return next(new ErrorHandler("Google login failed. Please try again.", 500));
   }
 });
+
 
 // New function for Google users to set a manual password
 export const setPasswordForGoogleUser = catchAsyncError(async (req, res, next) => {
@@ -561,36 +579,18 @@ export const verifyOTP = catchAsyncError(async (req, res, next) => {
 });
 
 // ✅ UPDATED LOGIN - Updates status to active and last login date
-export const login = catchAsyncError(async (req, res, next) => {
+export const clientLogin = catchAsyncError(async (req, res, next) => {
   const { email, password } = req.body;
 
-  console.log("Login attempt:", {
-    email,
-    hasPassword: !!password,
-    passwordLength: password?.length,
-  });
   if (!email || !password) {
     return next(new ErrorHandler("Email and password are required.", 400));
   }
 
-  const user = await User.findOne({ email, accountVerified: true }).select(
-    "+password"
-  );
+  const user = await User.findOne({ email, accountVerified: true }).select("+password");
 
-  console.log("User found:", !!user);
-
-  if (!user) {
-    return next(new ErrorHandler("User not registered.", 400));
-  }
-
-  // Check if user is suspended (but allow inactive users to login)
+  if (!user) return next(new ErrorHandler("User not registered.", 400));
   if (user.status === "suspended") {
-    return next(
-      new ErrorHandler(
-        "Account suspended. Contact Pickora team for assistance.",
-        400
-      )
-    );
+    return next(new ErrorHandler("Account suspended. Contact support.", 400));
   }
 
   const isPasswordMatched = await user.comparePassword(password);
@@ -598,17 +598,45 @@ export const login = catchAsyncError(async (req, res, next) => {
     return next(new ErrorHandler("Invalid email or password.", 400));
   }
 
-  // ✅ Update user status to active and set last login date
   user.status = "active";
   user.last_login_date = new Date();
   await user.save({ validateModifiedOnly: true });
 
-  console.log(
-    `✅ User ${user.email} logged in successfully. Status: ${user.status}, Last login: ${user.last_login_date}`
-  );
-
   sendToken(user, 200, "Login successful", res);
 });
+
+export const adminLogin = catchAsyncError(async (req, res, next) => {
+  const { email, password } = req.body;
+
+  const allowedAdminEmails = ["admin@example.com", "admin2@example.com"]; // Your whitelist
+
+  if (!email || !password) {
+    return next(new ErrorHandler("Email and password are required.", 400));
+  }
+
+  if (!allowedAdminEmails.includes(email)) {
+    return next(new ErrorHandler("Access denied: unauthorized email.", 403));
+  }
+
+  const user = await User.findOne({ email, accountVerified: true, role: "admin" }).select("+password");
+  
+  if (!user) return next(new ErrorHandler("Admin user not registered.", 400));
+  if (user.status === "suspended") {
+    return next(new ErrorHandler("Admin account suspended. Contact support.", 400));
+  }
+
+  const isPasswordMatched = await user.comparePassword(password);
+  if (!isPasswordMatched) {
+    return next(new ErrorHandler("Invalid email or password.", 400));
+  }
+
+  user.status = "active";
+  user.last_login_date = new Date();
+  await user.save({ validateModifiedOnly: true });
+
+  sendToken(user, 200, "Admin login successful", res);
+});
+
 
 export const logout = catchAsyncError(async (req, res, next) => {
   res

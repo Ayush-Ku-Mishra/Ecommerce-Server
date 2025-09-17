@@ -85,25 +85,41 @@ import SliderRouter from "./routes/SliderRouter.js";
 import orderRouter from "./routes/orderRouter.js";
 import notificationRouter from "./routes/notificationRoutes.js";
 
-// Enable CORS with your frontend URL from env
+const localOrigins = [
+  process.env.FRONTEND_CLIENT_URL_LOCAL,
+  process.env.FRONTEND_ADMIN_URL_LOCAL,
+];
+
+const prodOrigins = [
+  process.env.FRONTEND_CLIENT_URL_PROD,
+  process.env.FRONTEND_ADMIN_URL_PROD,
+];
+
+// Pick allowed origins based on environment
+const allowedOrigins =
+  process.env.NODE_ENV === "production" ? prodOrigins : localOrigins;
+
 app.use(
   cors({
-    origin: [
-      "http://localhost:5177",
-      "http://localhost:5180",
-      "https://ecommerce-website-ayush.netlify.app",
-      "https://ecommerce-adminpanel-ayush.netlify.app",
-    ],
-    methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"], // Add OPTIONS
+    origin: function (origin, callback) {
+      if (!origin) return callback(null, true); // Allow non-browser requests like Postman
+      if (allowedOrigins.indexOf(origin) === -1) {
+        const msg =
+          "The CORS policy for this site does not allow access from the specified Origin.";
+        return callback(new Error(msg), false);
+      }
+      return callback(null, true);
+    },
     credentials: true,
+    methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
     allowedHeaders: [
       "Content-Type",
       "Authorization",
       "Origin",
       "X-Requested-With",
       "Accept",
-    ], // Add more headers
-    optionsSuccessStatus: 200
+    ],
+    optionsSuccessStatus: 200,
   })
 );
 

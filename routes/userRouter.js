@@ -3,7 +3,8 @@ import {
   register,
   verifyOTP,
   resendOTP,
-  login,
+  clientLogin,
+  adminLogin,
   logout,
   getUser,
   forgotPassword,
@@ -14,9 +15,9 @@ import {
   changePassword,
   getUsersCount,
   getAllUsers,
-  deleteUser, 
+  deleteUser,
   bulkDeleteUsers,
-  authWithGoogle, 
+  authWithGoogle,
   googleLogin,
   setPasswordForGoogleUser,
   setPassword,
@@ -32,7 +33,8 @@ router.post("/register", register);
 router.post("/otp-verification", verifyOTP);
 router.post("/resend-otp", resendOTP);
 
-router.post("/login", login);
+router.post("/login", clientLogin);
+router.post("/admin/login", adminLogin);
 router.get("/logout", isAuthenticated, logout);
 
 router.get("/me", isAuthenticated, getUser);
@@ -43,7 +45,12 @@ router.put("/password/reset/:token", resetPassword);
 // Updated Google OAuth route to POST for auth code exchange
 router.post("/google", googleAuth);
 
-router.put("/user-avtar", isAuthenticated, upload.single('avatar'), userAvatarController);
+router.put(
+  "/user-avtar",
+  isAuthenticated,
+  upload.single("avatar"),
+  userAvatarController
+);
 router.delete("/deleteImage", isAuthenticated, removeImageFromCloudinary);
 
 router.put("/profile", isAuthenticated, updateProfile);
@@ -62,8 +69,5 @@ router.post("/setPasswordForGoogleUser", setPasswordForGoogleUser);
 router.put("/set-password", isAuthenticated, setPassword);
 
 router.get("/users-by-month", isAuthenticated, getUsersByMonth);
-
-
-
 
 export default router;
