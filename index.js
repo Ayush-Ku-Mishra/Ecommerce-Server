@@ -80,7 +80,7 @@ import AddressRouter from "./routes/addressRouter.js";
 import SizeChartRouter from "./routes/sizeChartRouter.js";
 
 import logoRouter from "./routes/logoRoutes.js";
-import reviewRouter from "./routes/ReviewRouter.js";
+import reviewRouter from "./routes/reviewRouter.js";
 import SliderRouter from "./routes/SliderRouter.js";
 import orderRouter from "./routes/orderRouter.js";
 import notificationRouter from "./routes/notificationRoutes.js";
