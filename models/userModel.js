@@ -11,13 +11,13 @@ const userSchema = new mongoose.Schema({
   },
   name: {
     type: String,
-    required: [true, "Name is required"]
+    required: [true, "Name is required"],
   },
   email: {
     type: String,
     required: [true, "Email is required"],
     unique: true,
-    lowercase: true
+    lowercase: true,
   },
   password: {
     type: String,
@@ -25,20 +25,20 @@ const userSchema = new mongoose.Schema({
     maxLength: [128, "Password cannot have more than 128 characters."], // Increased for hashed passwords
     select: false,
     // Password not required for Google users
-    required: function() {
+    required: function () {
       return !this.signUpWithGoogle;
-    }
+    },
   },
   phone: {
     type: String,
-    sparse: true // Allows multiple null values
+    sparse: true, // Allows multiple null values
   },
-  image: String, 
-  accountVerified: { 
-    type: Boolean, 
-    default: function() {
+  image: String,
+  accountVerified: {
+    type: Boolean,
+    default: function () {
       return this.signUpWithGoogle || false;
-    }
+    },
   },
   verificationCode: Number,
   verificationCodeExpire: Date,
@@ -59,9 +59,9 @@ const userSchema = new mongoose.Schema({
   status: {
     type: String,
     enum: ["active", "inactive", "suspended"],
-    default: function() {
+    default: function () {
       return this.signUpWithGoogle ? "active" : "inactive";
-    }
+    },
   },
   address_details: [
     {
@@ -85,20 +85,24 @@ const userSchema = new mongoose.Schema({
     type: Boolean,
     default: false,
   },
-  hasGooglePassword: {  // New field to track if user has set a manual password
+  hasGooglePassword: {
+    // New field to track if user has set a manual password
     type: Boolean,
     default: false,
-  }
+  },
 });
 
 // Create compound index for email uniqueness but allow multiple unverified accounts
-userSchema.index({ 
-  email: 1, 
-  accountVerified: 1 
-}, { 
-  unique: true,
-  partialFilterExpression: { accountVerified: true }
-});
+userSchema.index(
+  {
+    email: 1,
+    accountVerified: 1,
+  },
+  {
+    unique: true,
+    partialFilterExpression: { accountVerified: true },
+  }
+);
 
 // Hash password before save (skip for Google users or if password not modified)
 userSchema.pre("save", async function (next) {
@@ -106,17 +110,17 @@ userSchema.pre("save", async function (next) {
   if (!this.isModified("password")) {
     return next();
   }
-  
+
   // Only hash if password exists and it's not already hashed
-  if (this.password && !this.password.startsWith('$2b$')) {
+  if (this.password && !this.password.startsWith("$2b$")) {
     this.password = await bcrypt.hash(this.password, 10);
-    
+
     // Mark that user has set a manual password (for Google users who later set password)
     if (this.signUpWithGoogle) {
       this.hasGooglePassword = true;
     }
   }
-  
+
   next();
 });
 
@@ -126,11 +130,11 @@ userSchema.methods.comparePassword = async function (enteredPassword) {
   if (this.signUpWithGoogle && !this.hasGooglePassword) {
     return false; // Force them to use Google sign-in or set password first
   }
-  
+
   if (!this.password) {
     return false;
   }
-  
+
   return await bcrypt.compare(enteredPassword, this.password);
 };
 
@@ -140,7 +144,7 @@ userSchema.methods.generateVerificationCode = function () {
     const firstDigit = Math.floor(Math.random() * 9) + 1;
     const remainingDigits = Math.floor(Math.random() * 10000)
       .toString()
-      .padStart(4, '0');
+      .padStart(4, "0");
     return parseInt(firstDigit + remainingDigits);
   }
   const verificationCode = generateRandomFiveDigitNumber();
@@ -151,17 +155,21 @@ userSchema.methods.generateVerificationCode = function () {
 
 // Generate JWT token
 userSchema.methods.generateToken = function () {
-  return jwt.sign({ id: this._id }, process.env.JWT_SECRET_KEY, {
-    expiresIn: process.env.JWT_EXPIRE,
-  });
+  return jwt.sign(
+    { id: this._id, role: this.role }, // include role here
+    process.env.JWT_SECRET_KEY,
+    { expiresIn: process.env.JWT_EXPIRE }
+  );
 };
 
 // Generate password reset token (not needed for Google users without manual password)
 userSchema.methods.generateResetPasswordToken = function () {
   if (this.signUpWithGoogle && !this.hasGooglePassword) {
-    throw new Error("Password reset not available. Please use Google sign-in or set a password first.");
+    throw new Error(
+      "Password reset not available. Please use Google sign-in or set a password first."
+    );
   }
-  
+
   const resetToken = crypto.randomBytes(20).toString("hex");
   this.resetPasswordToken = crypto
     .createHash("sha256")
