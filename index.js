@@ -92,6 +92,7 @@ app.use(
       "http://localhost:5177",
       "http://localhost:5180",
       "https://ecommerce-website-ayush.netlify.app",
+      "https://ecommerce-adminpanel-ayush.netlify.app",
     ],
     methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"], // Add OPTIONS
     credentials: true,
