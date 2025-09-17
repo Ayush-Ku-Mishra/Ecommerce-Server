@@ -4,6 +4,7 @@ import {
   verifyOTP,
   resendOTP,
   clientLogin,
+  adminLogin,
   logout,
   getUser,
   forgotPassword,
@@ -12,49 +13,38 @@ import {
   removeImageFromCloudinary,
   updateProfile,
   changePassword,
+  getUsersCount,
+  getAllUsers,
+  deleteUser,
+  bulkDeleteUsers,
   authWithGoogle,
   googleLogin,
   setPasswordForGoogleUser,
   setPassword,
+  getUsersByMonth,
 } from "../controllers/userController.js";
-import { isAuthenticated, userOrAdmin } from "../middlewares/auth.js";
+import { isAuthenticated } from "../middlewares/auth.js";
 import { googleAuth } from "../controllers/authController.js";
 import upload from "../middlewares/multer.js";
 
 const router = express.Router();
 
-// Public routes
 router.post("/register", register);
 router.post("/otp-verification", verifyOTP);
 router.post("/resend-otp", resendOTP);
 
-// Client login routes
-router.post("/login", clientLogin); // Only for regular users
+router.post("/login", clientLogin);
+router.post("/admin/login", adminLogin);
+router.get("/logout", isAuthenticated, logout);
 
-// Google authentication routes for clients
-router.post("/google", googleAuth);
-router.post("/authWithGoogle", (req, res, next) => {
-  req.body.isAdminLogin = false; // Force client login
-  authWithGoogle(req, res, next);
-});
-router.post("/googleLogin", (req, res, next) => {
-  req.body.isAdminLogin = false; // Force client login
-  googleLogin(req, res, next);
-});
+router.get("/me", isAuthenticated, getUser);
 
-// Password reset routes (public)
 router.post("/password/forgot", forgotPassword);
 router.put("/password/reset/:token", resetPassword);
 
-// Protected user routes
-router.get("/logout", isAuthenticated, logout);
-router.get("/me", isAuthenticated, getUser);
-router.put("/profile", isAuthenticated, updateProfile);
-router.put("/change-password", isAuthenticated, changePassword);
-router.put("/set-password", isAuthenticated, setPassword);
-router.post("/setPasswordForGoogleUser", setPasswordForGoogleUser);
+// Updated Google OAuth route to POST for auth code exchange
+router.post("/google", googleAuth);
 
-// Avatar routes
 router.put(
   "/user-avtar",
   isAuthenticated,
@@ -62,5 +52,22 @@ router.put(
   userAvatarController
 );
 router.delete("/deleteImage", isAuthenticated, removeImageFromCloudinary);
+
+router.put("/profile", isAuthenticated, updateProfile);
+router.put("/change-password", isAuthenticated, changePassword);
+
+router.get("/count", isAuthenticated, getUsersCount);
+
+router.get("/all", isAuthenticated, getAllUsers);
+router.delete("/bulk-delete", isAuthenticated, bulkDeleteUsers);
+router.delete("/:id", isAuthenticated, deleteUser);
+
+router.post("/authWithGoogle", authWithGoogle);
+router.post("/googleLogin", googleLogin);
+router.post("/setPasswordForGoogleUser", setPasswordForGoogleUser);
+
+router.put("/set-password", isAuthenticated, setPassword);
+
+router.get("/users-by-month", isAuthenticated, getUsersByMonth);
 
 export default router;

@@ -78,16 +78,11 @@ export const register = catchAsyncError(async (req, res, next) => {
     });
 
     if (existingVerifiedUser) {
-      return next(
-        new ErrorHandler(
-          "Phone or Email is already registered. Please login instead.",
-          400
-        )
-      );
+      return next(new ErrorHandler("Phone or Email is already registered. Please login instead.", 400));
     }
 
     const now = Date.now();
-
+    
     // Find and DELETE old unverified accounts with same email/phone
     await User.deleteMany({
       $or: [
@@ -140,23 +135,18 @@ export const register = catchAsyncError(async (req, res, next) => {
     );
   } catch (error) {
     console.error("❌ Registration error:", error);
-
+    
     // Handle specific Mongoose validation errors
-    if (error.name === "ValidationError") {
-      const messages = Object.values(error.errors).map((err) => err.message);
-      return next(new ErrorHandler(messages.join(". "), 400));
+    if (error.name === 'ValidationError') {
+      const messages = Object.values(error.errors).map(err => err.message);
+      return next(new ErrorHandler(messages.join('. '), 400));
     }
-
+    
     // Handle duplicate key errors (shouldn't happen now due to cleanup)
     if (error.code === 11000) {
-      return next(
-        new ErrorHandler(
-          "Email or phone already exists. Please login instead.",
-          400
-        )
-      );
+      return next(new ErrorHandler("Email or phone already exists. Please login instead.", 400));
     }
-
+    
     next(error);
   }
 });
@@ -249,47 +239,29 @@ Visit www.pickora.com for assistance.
 
 export const authWithGoogle = catchAsyncError(async (req, res, next) => {
   try {
-    const { name, email, avatar, phone, isAdminLogin = false } = req.body;
+    const { name, email, avatar, phone, role = "user", isAdminLogin = false } = req.body;
 
     if (!name || !email) {
-      return next(
-        new ErrorHandler(
-          "Name and email are required for Google authentication.",
-          400
-        )
-      );
+      return next(new ErrorHandler("Name and email are required for Google authentication.", 400));
     }
 
-    const allowedAdminEmails = [
-      "amishra59137@gmail.com",
-      "dasrasmi781@gmail.com",
-    ];
+    const allowedAdminEmails = ["amishra59137@gmail.com", "dasrasmi781@gmail.com"];
 
-    // Determine role based on email and login type
-    let userRole = "user";
-    if (isAdminLogin && allowedAdminEmails.includes(email)) {
-      userRole = "admin";
-    } else if (isAdminLogin && !allowedAdminEmails.includes(email)) {
-      return next(
-        new ErrorHandler(
-          "Access denied: unauthorized email for admin access.",
-          403
-        )
-      );
+    if (isAdminLogin) {
+      if (!allowedAdminEmails.includes(email)) {
+        return next(new ErrorHandler("Access denied: unauthorized email.", 403));
+      }
+      if (role !== "admin") {
+        return next(new ErrorHandler("Access denied: user is not an admin.", 403));
+      }
     }
 
     let existingUser = await User.findOne({ email });
 
     if (existingUser) {
-      // Update existing user
       if (existingUser.accountVerified) {
         existingUser.status = "active";
         existingUser.last_login_date = new Date();
-
-        // Update role if logging in as admin and email is allowed
-        if (isAdminLogin && allowedAdminEmails.includes(email)) {
-          existingUser.role = "admin";
-        }
 
         if (avatar && existingUser.avatar !== avatar) {
           existingUser.avatar = avatar;
@@ -297,32 +269,28 @@ export const authWithGoogle = catchAsyncError(async (req, res, next) => {
         if (!existingUser.signUpWithGoogle) {
           existingUser.signUpWithGoogle = true;
         }
-
         await existingUser.save({ validateModifiedOnly: true });
 
         return sendToken(existingUser, 200, "Login successful!", res);
       } else {
-        // Verify unverified account
         existingUser.accountVerified = true;
         existingUser.status = "active";
         existingUser.last_login_date = new Date();
         existingUser.signUpWithGoogle = true;
         existingUser.name = name;
-        existingUser.role = userRole;
 
         if (avatar) existingUser.avatar = avatar;
 
         await existingUser.save({ validateModifiedOnly: true });
 
-        return sendToken(
-          existingUser,
-          200,
-          "Google account linked successfully! Welcome!",
-          res
-        );
+        return sendToken(existingUser, 200, "Google account linked successfully! Welcome to Pickora.", res);
       }
     } else {
-      // Create new user
+      if (isAdminLogin && !allowedAdminEmails.includes(email)) {
+        return next(new ErrorHandler("Access denied: unauthorized email.", 403));
+      }
+      const userRole = isAdminLogin ? "admin" : role;
+
       const newUserData = {
         name,
         email,
@@ -339,32 +307,20 @@ export const authWithGoogle = catchAsyncError(async (req, res, next) => {
 
       const newUser = await User.create(newUserData);
 
-      return sendToken(
-        newUser,
-        201,
-        "Google account created successfully! Welcome!",
-        res
-      );
+      return sendToken(newUser, 201, "Google account created successfully! Welcome to Pickora.", res);
     }
   } catch (error) {
     if (error.name === "ValidationError") {
       const messages = Object.values(error.errors).map((err) => err.message);
-      return next(
-        new ErrorHandler(`Validation failed: ${messages.join(". ")}`, 400)
-      );
+      return next(new ErrorHandler(`Validation failed: ${messages.join(". ")}`, 400));
     }
     if (error.code === 11000) {
-      return next(
-        new ErrorHandler("An account with this email already exists.", 400)
-      );
+      return next(new ErrorHandler("An account with this email already exists.", 400));
     }
-    return next(
-      new ErrorHandler("Google authentication failed. Please try again.", 500)
-    );
+    return next(new ErrorHandler("Google authentication failed. Please try again.", 500));
   }
 });
 
-// Updated Google login
 export const googleLogin = catchAsyncError(async (req, res, next) => {
   try {
     const { email, isAdminLogin = false } = req.body;
@@ -373,19 +329,10 @@ export const googleLogin = catchAsyncError(async (req, res, next) => {
       return next(new ErrorHandler("Email is required.", 400));
     }
 
-    const allowedAdminEmails = [
-      "amishra59137@gmail.com",
-      "dasrasmi781@gmail.com",
-    ];
+    const allowedAdminEmails = ["admin@example.com", "admin2@example.com"];
 
-    // Check admin access
     if (isAdminLogin && !allowedAdminEmails.includes(email)) {
-      return next(
-        new ErrorHandler(
-          "Access denied: unauthorized email for admin access.",
-          403
-        )
-      );
+      return next(new ErrorHandler("Access denied: unauthorized email.", 403));
     }
 
     const user = await User.findOne({
@@ -396,25 +343,14 @@ export const googleLogin = catchAsyncError(async (req, res, next) => {
 
     if (!user) {
       return next(
-        new ErrorHandler(
-          "Google account not found. Please sign up with Google first.",
-          404
-        )
+        new ErrorHandler("Google account not found. Please sign up with Google first.", 404)
       );
     }
 
     if (user.status === "suspended") {
       return next(
-        new ErrorHandler(
-          "Account suspended. Contact support for assistance.",
-          403
-        )
+        new ErrorHandler("Account suspended. Contact Pickora team for assistance.", 403)
       );
-    }
-
-    // Update role if logging in as admin and email is allowed
-    if (isAdminLogin && allowedAdminEmails.includes(email)) {
-      user.role = "admin";
     }
 
     user.status = "active";
@@ -423,75 +359,56 @@ export const googleLogin = catchAsyncError(async (req, res, next) => {
 
     sendToken(user, 200, "Google login successful!", res);
   } catch (error) {
-    return next(
-      new ErrorHandler("Google login failed. Please try again.", 500)
-    );
+    return next(new ErrorHandler("Google login failed. Please try again.", 500));
   }
 });
 
-// Helper function to check if user should be admin
-export const shouldBeAdmin = (email) => {
-  const allowedAdminEmails = [
-    "amishra59137@gmail.com",
-    "dasrasmi781@gmail.com",
-  ];
-  return allowedAdminEmails.includes(email);
-};
-
 // New function for Google users to set a manual password
-export const setPasswordForGoogleUser = catchAsyncError(
-  async (req, res, next) => {
-    try {
-      const { email, newPassword } = req.body;
+export const setPasswordForGoogleUser = catchAsyncError(async (req, res, next) => {
+  try {
+    const { email, newPassword } = req.body;
 
-      if (!email || !newPassword) {
-        return next(
-          new ErrorHandler("Email and new password are required.", 400)
-        );
-      }
-
-      if (newPassword.length < 6) {
-        return next(
-          new ErrorHandler("Password must be at least 6 characters long.", 400)
-        );
-      }
-
-      const user = await User.findOne({
-        email,
-        accountVerified: true,
-        signUpWithGoogle: true,
-      });
-
-      if (!user) {
-        return next(new ErrorHandler("Google account not found.", 404));
-      }
-
-      // Set the new password
-      user.password = newPassword; // Will be hashed by pre-save middleware
-      user.hasGooglePassword = true;
-      await user.save();
-
-      console.log(`✅ Password set for Google user: ${user.email}`);
-
-      res.status(200).json({
-        success: true,
-        message:
-          "Password set successfully! You can now login with email and password.",
-      });
-    } catch (error) {
-      console.error("❌ Set password error:", error);
-
-      if (error.name === "ValidationError") {
-        const messages = Object.values(error.errors).map((err) => err.message);
-        return next(new ErrorHandler(messages.join(". "), 400));
-      }
-
-      return next(
-        new ErrorHandler("Failed to set password. Please try again.", 500)
-      );
+    if (!email || !newPassword) {
+      return next(new ErrorHandler("Email and new password are required.", 400));
     }
+
+    if (newPassword.length < 6) {
+      return next(new ErrorHandler("Password must be at least 6 characters long.", 400));
+    }
+
+    const user = await User.findOne({ 
+      email, 
+      accountVerified: true,
+      signUpWithGoogle: true 
+    });
+
+    if (!user) {
+      return next(new ErrorHandler("Google account not found.", 404));
+    }
+
+    // Set the new password
+    user.password = newPassword; // Will be hashed by pre-save middleware
+    user.hasGooglePassword = true;
+    await user.save();
+
+    console.log(`✅ Password set for Google user: ${user.email}`);
+
+    res.status(200).json({
+      success: true,
+      message: "Password set successfully! You can now login with email and password.",
+    });
+
+  } catch (error) {
+    console.error("❌ Set password error:", error);
+    
+    if (error.name === 'ValidationError') {
+      const messages = Object.values(error.errors).map(err => err.message);
+      return next(new ErrorHandler(messages.join('. '), 400));
+    }
+    
+    return next(new ErrorHandler("Failed to set password. Please try again.", 500));
   }
-);
+});
 
 // Rest of your functions remain the same...
 function generateEmailTemplate(verificationCode) {
@@ -634,21 +551,9 @@ export const clientLogin = catchAsyncError(async (req, res, next) => {
     return next(new ErrorHandler("Email and password are required.", 400));
   }
 
-  // Client login - only allow users with 'user' role
-  const user = await User.findOne({
-    email,
-    accountVerified: true,
-    role: "user", // Ensure only users can login via client
-  }).select("+password");
+  const user = await User.findOne({ email, accountVerified: true }).select("+password");
 
-  if (!user)
-    return next(
-      new ErrorHandler(
-        "User not registered or not authorized for client access.",
-        400
-      )
-    );
-
+  if (!user) return next(new ErrorHandler("User not registered.", 400));
   if (user.status === "suspended") {
     return next(new ErrorHandler("Account suspended. Contact support.", 400));
   }
@@ -668,40 +573,21 @@ export const clientLogin = catchAsyncError(async (req, res, next) => {
 export const adminLogin = catchAsyncError(async (req, res, next) => {
   const { email, password } = req.body;
 
-  const allowedAdminEmails = [
-    "amishra59137@gmail.com",
-    "dasrasmi781@gmail.com",
-  ];
+  const allowedAdminEmails = ["amishra59137@gmail.com", "dasrasmi781@gmail.com"]; // Your whitelist
 
   if (!email || !password) {
     return next(new ErrorHandler("Email and password are required.", 400));
   }
 
-  // First check if email is in allowed list
   if (!allowedAdminEmails.includes(email)) {
     return next(new ErrorHandler("Access denied: unauthorized email.", 403));
   }
 
-  // Find user and ensure they have admin role
-  let user = await User.findOne({ email, accountVerified: true }).select(
-    "+password"
-  );
-
-  if (!user) {
-    return next(new ErrorHandler("Admin user not registered.", 400));
-  }
-
-  // Auto-promote to admin if they're in the allowed list but don't have admin role
-  if (user.role !== "admin") {
-    user.role = "admin";
-    await user.save({ validateModifiedOnly: true });
-    console.log(`✅ Promoted user ${email} to admin role`);
-  }
-
+  const user = await User.findOne({ email, accountVerified: true, role: "admin" }).select("+password");
+  
+  if (!user) return next(new ErrorHandler("Admin user not registered.", 400));
   if (user.status === "suspended") {
-    return next(
-      new ErrorHandler("Admin account suspended. Contact support.", 400)
-    );
+    return next(new ErrorHandler("Admin account suspended. Contact support.", 400));
   }
 
   const isPasswordMatched = await user.comparePassword(password);
@@ -715,6 +601,7 @@ export const adminLogin = catchAsyncError(async (req, res, next) => {
 
   sendToken(user, 200, "Admin login successful", res);
 });
+
 
 export const logout = catchAsyncError(async (req, res, next) => {
   res
@@ -1097,9 +984,7 @@ export const setPassword = catchAsyncError(async (req, res, next) => {
   }
 
   if (!newPassword || !confirmPassword) {
-    return next(
-      new ErrorHandler("Password and confirm password are required.", 400)
-    );
+    return next(new ErrorHandler("Password and confirm password are required.", 400));
   }
 
   if (newPassword !== confirmPassword) {
@@ -1113,7 +998,9 @@ export const setPassword = catchAsyncError(async (req, res, next) => {
   }
 
   if (newPassword.length > 32) {
-    return next(new ErrorHandler("Password cannot exceed 32 characters.", 400));
+    return next(
+      new ErrorHandler("Password cannot exceed 32 characters.", 400)
+    );
   }
 
   try {
@@ -1149,9 +1036,7 @@ export const changePassword = catchAsyncError(async (req, res, next) => {
   }
 
   if (!newPassword || !confirmPassword) {
-    return next(
-      new ErrorHandler("New password and confirm password are required.", 400)
-    );
+    return next(new ErrorHandler("New password and confirm password are required.", 400));
   }
 
   if (newPassword !== confirmPassword) {
@@ -1378,6 +1263,7 @@ export const bulkDeleteUsers = catchAsyncError(async (req, res, next) => {
   }
 });
 
+
 // Get users count grouped by month
 export const getUsersByMonth = async (req, res) => {
   try {
@@ -1385,10 +1271,10 @@ export const getUsersByMonth = async (req, res) => {
       {
         $group: {
           _id: { $month: "$createdAt" },
-          count: { $sum: 1 },
-        },
+          count: { $sum: 1 }
+        }
       },
-      { $sort: { _id: 1 } },
+      { $sort: { _id: 1 } }
     ]);
 
     res.json({ success: true, data: result });
