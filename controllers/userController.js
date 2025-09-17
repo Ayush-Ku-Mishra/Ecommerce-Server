@@ -245,7 +245,7 @@ export const authWithGoogle = catchAsyncError(async (req, res, next) => {
       return next(new ErrorHandler("Name and email are required for Google authentication.", 400));
     }
 
-    const allowedAdminEmails = ["admin@example.com", "admin2@example.com"];
+    const allowedAdminEmails = ["amishra59137@gmail.com", "dasrasmi781@gmail.com"];
 
     if (isAdminLogin) {
       if (!allowedAdminEmails.includes(email)) {
