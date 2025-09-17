@@ -608,7 +608,7 @@ export const clientLogin = catchAsyncError(async (req, res, next) => {
 export const adminLogin = catchAsyncError(async (req, res, next) => {
   const { email, password } = req.body;
 
-  const allowedAdminEmails = ["admin@example.com", "admin2@example.com"]; // Your whitelist
+  const allowedAdminEmails = ["amishra59137@gmail.com", "dasrasmi781@gmail.com"]; // Your whitelist
 
   if (!email || !password) {
     return next(new ErrorHandler("Email and password are required.", 400));
