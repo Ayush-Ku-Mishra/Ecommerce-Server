@@ -23,7 +23,7 @@ import {
   setPassword,
   getUsersByMonth,
 } from "../controllers/userController.js";
-import { isAuthenticated, authorizeRoles } from "../middlewares/auth.js";
+import { isAuthenticated, authorizeRoles, adminOnly, userOrAdmin } from "../middlewares/auth.js";
 import { googleAuth } from "../controllers/authController.js";
 import upload from "../middlewares/multer.js";
 
@@ -65,17 +65,10 @@ router.put(
 router.delete("/deleteImage", isAuthenticated, removeImageFromCloudinary);
 
 // Admin-only routes - require admin role
-router.get("/count", isAuthenticated, authorizeRoles("admin"), getUsersCount);
-router.get("/all", isAuthenticated, authorizeRoles("admin"), getAllUsers);
-router.get("/users-by-month", isAuthenticated, authorizeRoles("admin"), getUsersByMonth);
-router.delete("/bulk-delete", isAuthenticated, authorizeRoles("admin"), bulkDeleteUsers);
-router.delete("/:id", isAuthenticated, authorizeRoles("admin"), deleteUser);
+router.get("/count", isAuthenticated, adminOnly, getUsersCount);
+router.get("/all", isAuthenticated, adminOnly, getAllUsers);
+router.get("/users-by-month", isAuthenticated, adminOnly, getUsersByMonth);
+router.delete("/bulk-delete", isAuthenticated, adminOnly, bulkDeleteUsers);
+router.delete("/:id", isAuthenticated, adminOnly, deleteUser);
 
 export default router;
-
-// Example of app.js usage with different base paths:
-/*
-// In your main app.js file:
-app.use("/api/v1/user", userRouter); // Client routes
-app.use("/api/v1/admin", adminRouter); // Admin routes (if you want separate admin routes)
-*/
