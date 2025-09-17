@@ -84,6 +84,7 @@ import reviewRouter from "./routes/reviewRouter.js";
 import SliderRouter from "./routes/SliderRouter.js";
 import orderRouter from "./routes/orderRouter.js";
 import notificationRouter from "./routes/notificationRoutes.js";
+import adminRouter from "./routes/adminRoutes.js";
 
 const localOrigins = [
   process.env.FRONTEND_CLIENT_URL_LOCAL,
@@ -137,6 +138,7 @@ app.use(
 app.use(express.urlencoded({ extended: true }));
 
 app.use("/api/v1/user", userRouter);
+app.use("/api/v1/admin", adminRouter);
 app.use("/api/v1/category", CategoryRouter);
 app.use("/api/v1/product", ProductRouter);
 app.use("/api/v1/cart", CartRouter);

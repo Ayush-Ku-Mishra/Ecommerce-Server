@@ -4,7 +4,6 @@ import {
   verifyOTP,
   resendOTP,
   clientLogin,
-  adminLogin,
   logout,
   getUser,
   forgotPassword,
@@ -13,17 +12,12 @@ import {
   removeImageFromCloudinary,
   updateProfile,
   changePassword,
-  getUsersCount,
-  getAllUsers,
-  deleteUser,
-  bulkDeleteUsers,
   authWithGoogle,
   googleLogin,
   setPasswordForGoogleUser,
   setPassword,
-  getUsersByMonth,
 } from "../controllers/userController.js";
-import { isAuthenticated, authorizeRoles, adminOnly, userOrAdmin } from "../middlewares/auth.js";
+import { isAuthenticated, userOrAdmin } from "../middlewares/auth.js";
 import { googleAuth } from "../controllers/authController.js";
 import upload from "../middlewares/multer.js";
 
@@ -34,14 +28,23 @@ router.post("/register", register);
 router.post("/otp-verification", verifyOTP);
 router.post("/resend-otp", resendOTP);
 
-// Login routes
-router.post("/login", clientLogin); // Only for users
-router.post("/admin/login", adminLogin); // Only for admins
+// Client login routes
+router.post("/login", clientLogin); // Only for regular users
 
-// Google authentication routes
+// Google authentication routes for clients
 router.post("/google", googleAuth);
-router.post("/authWithGoogle", authWithGoogle);
-router.post("/googleLogin", googleLogin);
+router.post("/authWithGoogle", (req, res, next) => {
+  req.body.isAdminLogin = false; // Force client login
+  authWithGoogle(req, res, next);
+});
+router.post("/googleLogin", (req, res, next) => {
+  req.body.isAdminLogin = false; // Force client login
+  googleLogin(req, res, next);
+});
+
+// Password reset routes (public)
+router.post("/password/forgot", forgotPassword);
+router.put("/password/reset/:token", resetPassword);
 
 // Protected user routes
 router.get("/logout", isAuthenticated, logout);
@@ -51,10 +54,6 @@ router.put("/change-password", isAuthenticated, changePassword);
 router.put("/set-password", isAuthenticated, setPassword);
 router.post("/setPasswordForGoogleUser", setPasswordForGoogleUser);
 
-// Password reset routes
-router.post("/password/forgot", forgotPassword);
-router.put("/password/reset/:token", resetPassword);
-
 // Avatar routes
 router.put(
   "/user-avtar",
@@ -63,12 +62,5 @@ router.put(
   userAvatarController
 );
 router.delete("/deleteImage", isAuthenticated, removeImageFromCloudinary);
-
-// Admin-only routes - require admin role
-router.get("/count", isAuthenticated, adminOnly, getUsersCount);
-router.get("/all", isAuthenticated, adminOnly, getAllUsers);
-router.get("/users-by-month", isAuthenticated, adminOnly, getUsersByMonth);
-router.delete("/bulk-delete", isAuthenticated, adminOnly, bulkDeleteUsers);
-router.delete("/:id", isAuthenticated, adminOnly, deleteUser);
 
 export default router;
