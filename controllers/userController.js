@@ -63,6 +63,10 @@ export const register = catchAsyncError(async (req, res, next) => {
       isAdminRegistration = false,
     } = req.body;
 
+    // Check for admin/client request type
+    const isAdminRequest = req.headers["x-admin-request"] === "true";
+    const isClientRequest = req.headers["x-client-request"] === "true";
+
     if (!name || !email || !phone || !password || !verificationMethod) {
       return next(new ErrorHandler("All fields are required.", 400));
     }
@@ -83,7 +87,10 @@ export const register = catchAsyncError(async (req, res, next) => {
     ];
 
     // Check if this is admin registration attempt
-    if (isAdminRegistration && !allowedAdminEmails.includes(email)) {
+    if (
+      (isAdminRegistration || isAdminRequest) &&
+      !allowedAdminEmails.includes(email)
+    ) {
       return next(
         new ErrorHandler(
           "Access denied: This email is not authorized for admin registration.",
@@ -141,7 +148,10 @@ export const register = catchAsyncError(async (req, res, next) => {
 
     // Determine user role based on registration type and email
     let userRole = "user";
-    if (isAdminRegistration && allowedAdminEmails.includes(email)) {
+    if (
+      (isAdminRegistration || isAdminRequest) &&
+      allowedAdminEmails.includes(email)
+    ) {
       userRole = "admin";
     }
 
@@ -290,6 +300,13 @@ export const authWithGoogle = catchAsyncError(async (req, res, next) => {
       isAdminLogin = false,
     } = req.body;
 
+    // Check for admin/client request type from headers
+    const isAdminRequest = req.headers["x-admin-request"] === "true";
+    const isClientRequest = req.headers["x-client-request"] === "true";
+
+    // Determine if this is an admin login attempt
+    const adminLoginAttempt = isAdminLogin || isAdminRequest;
+
     if (!name || !email) {
       return next(
         new ErrorHandler(
@@ -305,7 +322,7 @@ export const authWithGoogle = catchAsyncError(async (req, res, next) => {
     ];
 
     // Check admin access first
-    if (isAdminLogin && !allowedAdminEmails.includes(email)) {
+    if (adminLoginAttempt && !allowedAdminEmails.includes(email)) {
       return next(
         new ErrorHandler(
           "Access denied: This email is not authorized for admin access.",
@@ -319,10 +336,20 @@ export const authWithGoogle = catchAsyncError(async (req, res, next) => {
     if (existingUser) {
       if (existingUser.accountVerified) {
         // For admin login, ensure user has admin role
-        if (isAdminLogin && existingUser.role !== "admin") {
+        if (adminLoginAttempt && existingUser.role !== "admin") {
           return next(
             new ErrorHandler(
               "Access denied: User account does not have admin privileges.",
+              403
+            )
+          );
+        }
+
+        // For client login, ensure user has user role
+        if (isClientRequest && existingUser.role !== "user") {
+          return next(
+            new ErrorHandler(
+              "Access denied: Please use appropriate login method for your account type.",
               403
             )
           );
@@ -339,11 +366,17 @@ export const authWithGoogle = catchAsyncError(async (req, res, next) => {
         }
         await existingUser.save({ validateModifiedOnly: true });
 
-        return sendToken(existingUser, 200, "Login successful!", res);
+        const loginType = adminLoginAttempt ? "Admin" : "Client";
+        return sendToken(
+          existingUser,
+          200,
+          `${loginType} login successful!`,
+          res
+        );
       } else {
         // Auto-verify and set appropriate role
         let userRole = existingUser.role;
-        if (isAdminLogin && allowedAdminEmails.includes(email)) {
+        if (adminLoginAttempt && allowedAdminEmails.includes(email)) {
           userRole = "admin";
         }
 
@@ -358,19 +391,19 @@ export const authWithGoogle = catchAsyncError(async (req, res, next) => {
 
         await existingUser.save({ validateModifiedOnly: true });
 
-        return sendToken(
-          existingUser,
-          200,
-          "Google account linked successfully! Welcome to Pickora.",
-          res
-        );
+        const welcomeMessage =
+          userRole === "admin"
+            ? "Admin Google account verified successfully! Welcome to Pickora Admin Panel."
+            : "Google account verified successfully! Welcome to Pickora.";
+
+        return sendToken(existingUser, 200, welcomeMessage, res);
       }
     } else {
       // Creating new user
       let userRole = "user";
-      if (isAdminLogin && allowedAdminEmails.includes(email)) {
+      if (adminLoginAttempt && allowedAdminEmails.includes(email)) {
         userRole = "admin";
-      } else if (isAdminLogin && !allowedAdminEmails.includes(email)) {
+      } else if (adminLoginAttempt && !allowedAdminEmails.includes(email)) {
         return next(
           new ErrorHandler(
             "Access denied: This email is not authorized for admin access.",
@@ -403,6 +436,7 @@ export const authWithGoogle = catchAsyncError(async (req, res, next) => {
       return sendToken(newUser, 201, welcomeMessage, res);
     }
   } catch (error) {
+    console.error("Google auth error:", error);
     if (error.name === "ValidationError") {
       const messages = Object.values(error.errors).map((err) => err.message);
       return next(
@@ -690,11 +724,16 @@ export const clientLogin = catchAsyncError(async (req, res, next) => {
     return next(new ErrorHandler("Email and password are required.", 400));
   }
 
-  const user = await User.findOne({ email, accountVerified: true }).select(
-    "+password"
-  );
+  const user = await User.findOne({
+    email,
+    accountVerified: true,
+    role: "user", // Ensure only users can login through client
+  }).select("+password");
 
-  if (!user) return next(new ErrorHandler("User not registered.", 400));
+  if (!user) {
+    return next(new ErrorHandler("User not found or unauthorized.", 400));
+  }
+
   if (user.status === "suspended") {
     return next(new ErrorHandler("Account suspended. Contact support.", 400));
   }
@@ -708,7 +747,7 @@ export const clientLogin = catchAsyncError(async (req, res, next) => {
   user.last_login_date = new Date();
   await user.save({ validateModifiedOnly: true });
 
-  sendToken(user, 200, "Login successful", res);
+  sendToken(user, 200, "Client login successful", res);
 });
 
 export const adminLogin = catchAsyncError(async (req, res, next) => {
@@ -717,7 +756,7 @@ export const adminLogin = catchAsyncError(async (req, res, next) => {
   const allowedAdminEmails = [
     "amishra59137@gmail.com",
     "dasrasmi781@gmail.com",
-  ]; // Your whitelist
+  ];
 
   if (!email || !password) {
     return next(new ErrorHandler("Email and password are required.", 400));
@@ -738,7 +777,10 @@ export const adminLogin = catchAsyncError(async (req, res, next) => {
     role: "admin",
   }).select("+password");
 
-  if (!user) return next(new ErrorHandler("Admin user not registered.", 400));
+  if (!user) {
+    return next(new ErrorHandler("Admin user not found.", 400));
+  }
+
   if (user.status === "suspended") {
     return next(
       new ErrorHandler("Admin account suspended. Contact support.", 400)
@@ -758,28 +800,58 @@ export const adminLogin = catchAsyncError(async (req, res, next) => {
 });
 
 export const logout = catchAsyncError(async (req, res, next) => {
-  res
-    .status(200)
-    .cookie("token", "", {
+  const requestType = req.headers["x-admin-request"]
+    ? "Admin"
+    : req.headers["x-client-request"]
+    ? "Client"
+    : "User";
+
+  console.log(`🚪 Logout request from ${requestType}`);
+
+  try {
+    // Clear the HTTP-only cookie (for backward compatibility)
+    res.cookie("token", "", {
       expires: new Date(Date.now()),
       httpOnly: true,
-    })
-    .json({
-      success: true,
-      message: "Logged out successfully.",
+      secure: process.env.NODE_ENV === "production",
+      sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
     });
+
+    res.status(200).json({
+      success: true,
+      message: `${requestType} logged out successfully.`,
+    });
+  } catch (error) {
+    console.error(`Logout error for ${requestType}:`, error);
+    return next(new ErrorHandler("Logout failed", 500));
+  }
 });
 
 // ✅ UPDATED getUser - Include status and last login date in response
 export const getUser = catchAsyncError(async (req, res, next) => {
-  const user = req.user;
+  const requestType = req.headers["x-admin-request"]
+    ? "admin"
+    : req.headers["x-client-request"]
+    ? "client"
+    : "unknown";
+
+  // Additional validation based on request type
+  if (requestType === "admin" && req.user.role !== "admin") {
+    return next(
+      new ErrorHandler("Access denied. Admin privileges required.", 403)
+    );
+  }
+
+  if (requestType === "client" && req.user.role !== "user") {
+    return next(
+      new ErrorHandler("Access denied. User privileges required.", 403)
+    );
+  }
+
   res.status(200).json({
     success: true,
-    user: {
-      ...user.toObject(),
-      status: user.status,
-      last_login_date: user.last_login_date,
-    },
+    user: req.user,
+    requestType: requestType,
   });
 });
 

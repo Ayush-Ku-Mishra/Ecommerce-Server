@@ -5,15 +5,25 @@ import { User } from "../models/userModel.js";
 
 export const isAuthenticated = catchAsyncError(async (req, res, next) => {
   let token;
+  let requestType = null;
 
-  // Try to get token from cookies first, then Authorization header
-  if (req.cookies.token) {
-    token = req.cookies.token;
-  } else if (
-    req.headers.authorization &&
-    req.headers.authorization.startsWith("Bearer ")
-  ) {
+  // Check for admin or client request flags
+  const isAdminRequest = req.headers['x-admin-request'] === 'true';
+  const isClientRequest = req.headers['x-client-request'] === 'true';
+
+  if (isAdminRequest) {
+    requestType = 'admin';
+  } else if (isClientRequest) {
+    requestType = 'client';
+  }
+
+  // Priority: Authorization header -> cookies
+  if (req.headers.authorization && req.headers.authorization.startsWith("Bearer ")) {
     token = req.headers.authorization.split(" ")[1];
+    console.log(`🔍 Using Authorization header token for ${requestType || 'unknown'} request`);
+  } else if (req.cookies.token) {
+    token = req.cookies.token;
+    console.log(`🔍 Using cookie token for ${requestType || 'unknown'} request`);
   }
 
   if (!token) {
@@ -36,7 +46,17 @@ export const isAuthenticated = catchAsyncError(async (req, res, next) => {
       return next(new ErrorHandler("Please verify your account first.", 401));
     }
 
+    // Role-based request validation
+    if (requestType === 'admin' && user.role !== 'admin') {
+      return next(new ErrorHandler("Access denied. Admin privileges required.", 403));
+    }
+
+    if (requestType === 'client' && user.role !== 'user') {
+      return next(new ErrorHandler("Access denied. User privileges required.", 403));
+    }
+
     req.user = user;
+    req.requestType = requestType; // Store request type for other middlewares
     next();
   } catch (error) {
     if (error.name === "JsonWebTokenError") {
@@ -51,7 +71,7 @@ export const isAuthenticated = catchAsyncError(async (req, res, next) => {
   }
 });
 
-// Role-based authorization middleware - FIXED VERSION
+// Role-based authorization middleware - ENHANCED VERSION
 export const authorizeRoles = (...roles) => {
   return (req, res, next) => {
     // Check if user is authenticated first
