@@ -65,7 +65,6 @@ console.log(
   "TWILIO_PHONE_NUMBER:",
   process.env.TWILIO_PHONE_NUMBER ? "✅ Loaded" : "❌ Missing"
 );
-console.log("FRONTEND_URL:", process.env.FRONTEND_URL);
 
 // NOW import other modules after environment variables are loaded
 import { connection } from "./database/dbConnection.js";
@@ -157,7 +156,6 @@ app.get("/debug/env", (req, res) => {
     twilioSid: process.env.TWILIO_ACCOUNT_SID ? "Set" : "Not Set",
     twilioToken: process.env.TWILIO_AUTH_TOKEN ? "Set" : "Not Set",
     twilioPhone: process.env.TWILIO_PHONE_NUMBER ? "Set" : "Not Set",
-    frontendUrl: process.env.FRONTEND_URL,
     razorpayKeyId: process.env.RAZORPAY_KEY_ID ? "Set" : "Not Set",
     razorpayKeySecret: process.env.RAZORPAY_KEY_SECRET ? "Set" : "Not Set",
   });

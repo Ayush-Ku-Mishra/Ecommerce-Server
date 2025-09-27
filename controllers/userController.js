@@ -301,7 +301,6 @@ export const authWithGoogle = catchAsyncError(async (req, res, next) => {
 
     const allowedAdminEmails = [
       "amishra59137@gmail.com",
-      "dasrasmi781@gmail.com",
     ];
 
     // Check admin access first
@@ -318,8 +317,10 @@ export const authWithGoogle = catchAsyncError(async (req, res, next) => {
 
     if (existingUser) {
       if (existingUser.accountVerified) {
-        // For admin login, ensure user has admin role
-        if (isAdminLogin && existingUser.role !== "admin") {
+        // For admin login, upgrade user to admin if they're in whitelist
+        if (isAdminLogin && allowedAdminEmails.includes(email)) {
+          existingUser.role = "admin"; // Automatically upgrade to admin
+        } else if (isAdminLogin && existingUser.role !== "admin") {
           return next(
             new ErrorHandler(
               "Access denied: User account does not have admin privileges.",
@@ -681,7 +682,6 @@ export const verifyOTP = catchAsyncError(async (req, res, next) => {
     );
   }
 });
-
 
 // ✅ UPDATED LOGIN - Updates status to active and last login date
 export const clientLogin = catchAsyncError(async (req, res, next) => {

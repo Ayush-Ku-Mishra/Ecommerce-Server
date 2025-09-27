@@ -16,10 +16,12 @@ export const uploadImages = catchAsyncError(async (req, res, next) => {
     const imagesArr = [];
 
     const options = {
-      user_filename: true,
+      use_filename: true,
       unique_filename: false,
       overwrite: false,
       folder: "sliders", // Organize images in folders
+      quality: "auto",
+      fetch_format: "auto"
     };
 
     for (const file of files) {
@@ -37,7 +39,7 @@ export const uploadImages = catchAsyncError(async (req, res, next) => {
     return res.status(200).json({
       success: true,
       images: imagesArr,
-      message: "Images uploaded successfully.",
+      message: "Images uploaded successfully to Cloudinary.",
     });
   } catch (error) {
     console.error("Upload images error:", error);
@@ -56,30 +58,26 @@ export const removeImageFromCloudinary = catchAsyncError(
       return next(new ErrorHandler("Image URL is required.", 400));
     }
 
-    // Extract public_id from cloudinary URL
-    const urlParts = imgUrl.split("/");
-    const imageWithExtension = urlParts[urlParts.length - 1];
-    const publicId = imageWithExtension.split(".")[0];
-
-    // If image is in a folder, include the folder path
-    const folderIndex = urlParts.indexOf("sliders");
-    let fullPublicId = publicId;
-    if (folderIndex !== -1) {
-      const folderPath = urlParts.slice(folderIndex, -1).join("/");
-      fullPublicId = `${folderPath}/${publicId}`;
-    }
-
-    if (!fullPublicId) {
-      return next(new ErrorHandler("Invalid image URL.", 400));
-    }
-
     try {
+      // Extract public_id from cloudinary URL
+      const urlParts = imgUrl.split("/");
+      const imageWithExtension = urlParts[urlParts.length - 1];
+      const publicId = imageWithExtension.split(".")[0];
+
+      // If image is in a folder, include the folder path
+      const folderIndex = urlParts.indexOf("sliders");
+      let fullPublicId = publicId;
+      if (folderIndex !== -1) {
+        const folderPath = urlParts.slice(folderIndex, -1).join("/");
+        fullPublicId = `${folderPath}/${publicId}`;
+      }
+
       const result = await cloudinary.uploader.destroy(fullPublicId);
 
       if (result && result.result === "ok") {
         return res.status(200).json({
           success: true,
-          message: "Image deleted from Cloudinary.",
+          message: "Image deleted from Cloudinary successfully.",
           data: result,
         });
       } else {
@@ -97,32 +95,26 @@ export const removeImageFromCloudinary = catchAsyncError(
   }
 );
 
-// Create new slider
+// Create new slider (simplified)
 export const createSlider = catchAsyncError(async (req, res, next) => {
-  const { type, imageUrl, bannerImage, title, subtitle, price, link, order, isActive } = req.body;
+  const { imageUrl, type = 'simple', order } = req.body;
 
-  if (!type || !['simple', 'banner'].includes(type)) {
-    return next(new ErrorHandler('Invalid type. Allowed values: simple, banner', 400));
+  // Validation
+  if (!imageUrl) {
+    return next(new ErrorHandler('Image URL is required', 400));
   }
 
-  if (type === 'simple' && !imageUrl) {
-    return next(new ErrorHandler('imageUrl is required for simple slider', 400));
-  }
-
-  if (type === 'banner' && !bannerImage) {
-    return next(new ErrorHandler('bannerImage is required for banner slider', 400));
+  // If no order specified, make it the last one
+  let sliderOrder = order;
+  if (!sliderOrder) {
+    const lastSlider = await SliderModel.findOne().sort({ order: -1 });
+    sliderOrder = lastSlider ? lastSlider.order + 1 : 1;
   }
 
   const slider = new SliderModel({
     type,
-    imageUrl: type === 'simple' ? imageUrl : undefined,
-    bannerImage: type === 'banner' ? bannerImage : undefined,
-    title: type === 'banner' ? title || '' : undefined,
-    subtitle: type === 'banner' ? subtitle || '' : undefined,
-    price: type === 'banner' ? price || '' : undefined,
-    link: type === 'banner' ? link || '' : undefined,
-    order: order || 0,
-    isActive: isActive !== undefined ? isActive : true,
+    imageUrl,
+    order: sliderOrder
   });
 
   await slider.save();
@@ -134,31 +126,14 @@ export const createSlider = catchAsyncError(async (req, res, next) => {
   });
 });
 
-// Get all sliders (admin)
+// Get all sliders (simplified - no active/inactive distinction)
 export const getAllSliders = catchAsyncError(async (req, res, next) => {
-  const { type, isActive } = req.query;
+  const { type } = req.query;
   
   const filter = {};
   if (type) filter.type = type;
-  if (isActive !== undefined) filter.isActive = isActive === 'true';
 
   const sliders = await SliderModel.find(filter).sort({ order: 1, createdAt: -1 });
-
-  res.status(200).json({
-    success: true,
-    count: sliders.length,
-    sliders,
-  });
-});
-
-// Get all active sliders for public (client website)
-export const getActiveSliders = catchAsyncError(async (req, res, next) => {
-  const { type } = req.query;
-  
-  const filter = { isActive: true };
-  if (type) filter.type = type;
-
-  const sliders = await SliderModel.find(filter).sort({ order: 1 });
 
   res.status(200).json({
     success: true,
@@ -183,29 +158,12 @@ export const getSliderById = catchAsyncError(async (req, res, next) => {
 
 // Update slider by ID
 export const updateSlider = catchAsyncError(async (req, res, next) => {
-  const { type } = req.body;
-
-  if (type && !['simple', 'banner'].includes(type)) {
-    return next(new ErrorHandler('Invalid type. Allowed values: simple, banner', 400));
-  }
-
   let slider = await SliderModel.findById(req.params.id);
   if (!slider) {
     return next(new ErrorHandler('Slider not found', 404));
   }
 
   const updatedData = { ...req.body };
-
-  // Clean up data based on type
-  if (type === 'simple') {
-    delete updatedData.bannerImage;
-    delete updatedData.title;
-    delete updatedData.subtitle;
-    delete updatedData.price;
-    delete updatedData.link;
-  } else if (type === 'banner') {
-    delete updatedData.imageUrl;
-  }
 
   slider = await SliderModel.findByIdAndUpdate(req.params.id, updatedData, {
     new: true,
@@ -215,24 +173,6 @@ export const updateSlider = catchAsyncError(async (req, res, next) => {
   res.status(200).json({
     success: true,
     message: 'Slider updated successfully',
-    slider,
-  });
-});
-
-// Toggle slider active status
-export const toggleSliderStatus = catchAsyncError(async (req, res, next) => {
-  const slider = await SliderModel.findById(req.params.id);
-
-  if (!slider) {
-    return next(new ErrorHandler('Slider not found', 404));
-  }
-
-  slider.isActive = !slider.isActive;
-  await slider.save();
-
-  res.status(200).json({
-    success: true,
-    message: `Slider ${slider.isActive ? 'activated' : 'deactivated'} successfully`,
     slider,
   });
 });
@@ -261,7 +201,7 @@ export const updateSliderOrder = catchAsyncError(async (req, res, next) => {
   }
 });
 
-// Delete slider by ID
+// Delete slider by ID (with Cloudinary cleanup)
 export const deleteSlider = catchAsyncError(async (req, res, next) => {
   const slider = await SliderModel.findById(req.params.id);
 
@@ -269,19 +209,22 @@ export const deleteSlider = catchAsyncError(async (req, res, next) => {
     return next(new ErrorHandler('Slider not found', 404));
   }
 
-  // Optional: Delete associated images from cloudinary
+  // Delete associated image from cloudinary
   try {
     if (slider.imageUrl) {
       const urlParts = slider.imageUrl.split("/");
       const imageWithExtension = urlParts[urlParts.length - 1];
       const publicId = imageWithExtension.split(".")[0];
-      await cloudinary.uploader.destroy(`sliders/${publicId}`);
-    }
-    if (slider.bannerImage) {
-      const urlParts = slider.bannerImage.split("/");
-      const imageWithExtension = urlParts[urlParts.length - 1];
-      const publicId = imageWithExtension.split(".")[0];
-      await cloudinary.uploader.destroy(`sliders/${publicId}`);
+      
+      // Include folder path if exists
+      const folderIndex = urlParts.indexOf("sliders");
+      let fullPublicId = publicId;
+      if (folderIndex !== -1) {
+        const folderPath = urlParts.slice(folderIndex, -1).join("/");
+        fullPublicId = `${folderPath}/${publicId}`;
+      }
+      
+      await cloudinary.uploader.destroy(fullPublicId);
     }
   } catch (error) {
     console.warn("Failed to delete image from cloudinary:", error.message);
@@ -292,5 +235,59 @@ export const deleteSlider = catchAsyncError(async (req, res, next) => {
   res.status(200).json({
     success: true,
     message: 'Slider deleted successfully',
+  });
+});
+
+// Batch create sliders (useful for multiple image upload)
+export const batchCreateSliders = catchAsyncError(async (req, res, next) => {
+  const { imageUrls, type = 'simple' } = req.body;
+
+  if (!Array.isArray(imageUrls) || imageUrls.length === 0) {
+    return next(new ErrorHandler('imageUrls array is required', 400));
+  }
+
+  // Get the current highest order
+  const lastSlider = await SliderModel.findOne().sort({ order: -1 });
+  let currentOrder = lastSlider ? lastSlider.order : 0;
+
+  const sliders = [];
+  for (const imageUrl of imageUrls) {
+    currentOrder += 1;
+    const slider = new SliderModel({
+      type,
+      imageUrl,
+      order: currentOrder
+    });
+    
+    const savedSlider = await slider.save();
+    sliders.push(savedSlider);
+  }
+
+  res.status(201).json({
+    success: true,
+    message: `${sliders.length} sliders created successfully`,
+    sliders,
+  });
+});
+
+// Get sliders for frontend display (public route)
+export const getPublicSliders = catchAsyncError(async (req, res, next) => {
+  const { type, limit } = req.query;
+  
+  const filter = {};
+  if (type) filter.type = type;
+
+  let query = SliderModel.find(filter).sort({ order: 1, createdAt: -1 });
+  
+  if (limit) {
+    query = query.limit(parseInt(limit));
+  }
+
+  const sliders = await query;
+
+  res.status(200).json({
+    success: true,
+    count: sliders.length,
+    sliders,
   });
 });
