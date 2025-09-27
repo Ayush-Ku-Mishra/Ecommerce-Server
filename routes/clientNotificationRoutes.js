@@ -6,7 +6,7 @@ import {
   markUserNotificationAsRead,
   markAllUserNotificationsAsRead,
   deleteUserNotification
-} from "../controllers/notificationController.js";
+} from "../controllers/clientNotificationController.js";
 
 const clientNotificationRouter = Router();
 
