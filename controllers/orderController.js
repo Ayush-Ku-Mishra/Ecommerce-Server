@@ -3,6 +3,7 @@ import crypto from "crypto";
 import OrderModel from "../models/order.model.js";
 import CartProductModel from "../models/cartProduct.model.js";
 import { createOrderNotification } from "./notificationController.js";
+import { createClientNotification } from "./clientNotificationController.js";
 
 // Create the actual create-order endpoint - ONLY creates Razorpay order, doesn't save to DB
 export const createRazorpayOrder = async (req, res) => {
@@ -203,6 +204,16 @@ export const verifyPayment = async (req, res) => {
       paymentMethod: "ONLINE",
     });
 
+    // Create notification for client
+    await createClientNotification({
+      userId: userId,
+      type: "order_placed",
+      title: "Order Placed Successfully! 🎉",
+      message: `Your order #${order.orderId} has been placed successfully. We'll notify you when it ships!`,
+      orderId: order.orderId,
+      link: `/account/orders/${order.orderId}`,
+    });
+
     // Clear the user's cart after successful payment (only if not buy now mode)
     if (!isBuyNow) {
       try {
@@ -315,6 +326,16 @@ export const createCODOrder = async (req, res) => {
       customerName: order.delivery_address.name,
       amount: order.TotalAmount,
       paymentMethod: "COD",
+    });
+
+    // Create notification for client
+    await createClientNotification({
+      userId: userId,
+      type: "order_placed",
+      title: "COD Order Placed Successfully! 🎉",
+      message: `Your COD order #${order.orderId} has been placed successfully. Pay ₹${order.TotalAmount} at delivery.`,
+      orderId: order.orderId,
+      link: `/account/orders/${order.orderId}`,
     });
 
     // Clear cart for COD orders
@@ -593,6 +614,49 @@ export const updateOrderStatus = async (req, res) => {
     ).populate("userId", "name email phone");
 
     console.log(`Order ${orderId} status successfully updated to: ${status}`);
+
+    // CREATE CLIENT NOTIFICATION BASED ON STATUS CHANGE
+    let notificationTitle = "";
+    let notificationMessage = "";
+    let notificationType = "";
+
+    switch (status) {
+      case "shipped":
+        notificationTitle = "Order Shipped! 📦";
+        notificationMessage = `Your order #${orderId} has been shipped and is on its way!`;
+        notificationType = "order_shipped";
+        break;
+      case "delivered":
+        notificationTitle = "Order Delivered! ✅";
+        notificationMessage = `Your order #${orderId} has been successfully delivered!`;
+        notificationType = "order_delivered";
+        break;
+      case "cancelled":
+        notificationTitle = "Order Cancelled ❌";
+        notificationMessage = `Your order #${orderId} has been cancelled.`;
+        notificationType = "order_cancelled";
+        break;
+      case "processing":
+        notificationTitle = "Order Processing 🔄";
+        notificationMessage = `Your order #${orderId} is being processed.`;
+        notificationType = "order_placed";
+        break;
+    }
+
+    // Create notification if we have a title (meaning it's a status we want to notify about)
+    if (notificationTitle && updatedOrder.userId && updatedOrder.userId._id) {
+      await createClientNotification({
+        userId: updatedOrder.userId._id,
+        type: notificationType,
+        title: notificationTitle,
+        message: notificationMessage,
+        orderId: orderId,
+        link: `/account/orders/${orderId}`,
+      });
+      console.log(
+        `Client notification created for order ${orderId} status change to ${status}`
+      );
+    }
 
     // Optional: Log status change for audit purposes
     console.log(
