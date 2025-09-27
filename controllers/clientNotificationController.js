@@ -1,4 +1,4 @@
-import { ClientNotificationModel } from "../models/clientNotification.model.js";
+import { ClientNotificationModel } from "../models/clientNotificationModel.js";
 
 // Create notification for client when order status changes
 export const createClientNotification = async (notificationData) => {
