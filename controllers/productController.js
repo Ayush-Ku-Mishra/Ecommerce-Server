@@ -1,4 +1,3 @@
-import productModel from "../models/productModel.js";
 import ErrorHandler from "../middlewares/error.js";
 import { catchAsyncError } from "../middlewares/catchAsyncError.js";
 import { v2 as cloudinary } from "cloudinary";
@@ -120,7 +119,7 @@ export const createProduct = catchAsyncError(async (req, res, next) => {
     }
 
     // Create product document
-    const product = new productModel({
+    const product = new ProductModel({
       name: req.body.name,
       productDetails: req.body.productDetails,
       images: imagesArr,
@@ -262,8 +261,10 @@ export const getAllProducts = catchAsyncError(async (req, res, next) => {
 
     const products = await ProductModel.find(query)
       .populate("category")
+      .sort({ updatedAt: -1 })
       .skip((page - 1) * perPage)
       .limit(perPage)
+      .lean()
       .exec();
 
     console.log(`Found ${products.length} products for search: "${search}"`);
@@ -274,6 +275,7 @@ export const getAllProducts = catchAsyncError(async (req, res, next) => {
       products: products,
       totalPages: totalPages,
       page: page,
+      timestamp: new Date().getTime(),
     });
   } catch (error) {
     console.error("Get all products error:", error);
@@ -288,7 +290,7 @@ export const getAllProductsByCatId = catchAsyncError(async (req, res, next) => {
   try {
     const page = parseInt(req.query.page) || 1;
     const perPage = parseInt(req.query.perPage);
-    const totalPosts = await productModel.countDocuments();
+    const totalPosts = await ProductModel.countDocuments();
     const totalPages = Math.ceil(totalPosts / perPage);
 
     if (page > totalPages) {
@@ -298,7 +300,7 @@ export const getAllProductsByCatId = catchAsyncError(async (req, res, next) => {
       });
     }
 
-    const products = await productModel
+    const products = await ProductModel
       .find({ categoryId: req.params.id })
       .populate("category")
       .skip((page - 1) * perPage)
@@ -345,7 +347,7 @@ export const getAllProductsByCatName = catchAsyncError(
       console.log(`Searching for category: ${categoryName}`); // Debug log
 
       // Case-insensitive search using regex
-      const products = await productModel
+      const products = await ProductModel
         .find({
           categoryName: {
             $regex: new RegExp(`^${categoryName}$`, "i"),
@@ -365,7 +367,7 @@ export const getAllProductsByCatName = catchAsyncError(
       }
 
       // Get total count with the same filter
-      const totalPosts = await productModel.countDocuments({
+      const totalPosts = await ProductModel.countDocuments({
         categoryName: {
           $regex: new RegExp(`^${categoryName}$`, "i"),
         },
@@ -411,7 +413,7 @@ export const getAllProductsBySubCatid = catchAsyncError(
     try {
       const page = parseInt(req.query.page) || 1;
       const perPage = parseInt(req.query.perPage) || 10000;
-      const totalPosts = await productModel.countDocuments();
+      const totalPosts = await ProductModel.countDocuments();
       const totalPages = Math.ceil(totalPosts / perPage);
 
       if (page > totalPages) {
@@ -421,7 +423,7 @@ export const getAllProductsBySubCatid = catchAsyncError(
         });
       }
 
-      const products = await productModel
+      const products = await ProductModel
         .find({ subCatId: req.params.id })
         .populate("category")
         .skip((page - 1) * perPage)
@@ -457,7 +459,7 @@ export const getAllProductsBySubCatName = catchAsyncError(
     try {
       const page = parseInt(req.query.page) || 1;
       const perPage = parseInt(req.query.perPage) || 10000;
-      const totalPosts = await productModel.countDocuments();
+      const totalPosts = await ProductModel.countDocuments();
       const totalPages = Math.ceil(totalPosts / perPage);
 
       if (page > totalPages) {
@@ -467,7 +469,7 @@ export const getAllProductsBySubCatName = catchAsyncError(
         });
       }
 
-      const products = await productModel
+      const products = await ProductModel
         .find({ subCatName: req.query.subCatName })
         .populate("category")
         .skip((page - 1) * perPage)
@@ -503,7 +505,7 @@ export const getAllProductsByThirdSubCatid = catchAsyncError(
     try {
       const page = parseInt(req.query.page) || 1;
       const perPage = parseInt(req.query.perPage) || 10000;
-      const totalPosts = await productModel.countDocuments();
+      const totalPosts = await ProductModel.countDocuments();
       const totalPages = Math.ceil(totalPosts / perPage);
 
       if (page > totalPages) {
@@ -513,7 +515,7 @@ export const getAllProductsByThirdSubCatid = catchAsyncError(
         });
       }
 
-      const products = await productModel
+      const products = await ProductModel
         .find({ thirdSubCatId: req.params.id })
         .populate("category")
         .skip((page - 1) * perPage)
@@ -549,7 +551,7 @@ export const getAllProductsByThirdSubCatName = catchAsyncError(
     try {
       const page = parseInt(req.query.page) || 1;
       const perPage = parseInt(req.query.perPage) || 10000;
-      const totalPosts = await productModel.countDocuments();
+      const totalPosts = await ProductModel.countDocuments();
       const totalPages = Math.ceil(totalPosts / perPage);
 
       if (page > totalPages) {
@@ -559,7 +561,7 @@ export const getAllProductsByThirdSubCatName = catchAsyncError(
         });
       }
 
-      const products = await productModel
+      const products = await ProductModel
         .find({ thirdSubCatName: req.query.thirdSubCatName })
         .populate("category")
         .skip((page - 1) * perPage)
@@ -595,7 +597,7 @@ export const getAllProductsByFourthSubCatId = catchAsyncError(
     try {
       const page = parseInt(req.query.page) || 1;
       const perPage = parseInt(req.query.perPage) || 10000;
-      const totalPosts = await productModel.countDocuments({
+      const totalPosts = await ProductModel.countDocuments({
         fourthSubCatId: req.params.id,
       });
       const totalPages = Math.ceil(totalPosts / perPage);
@@ -607,7 +609,7 @@ export const getAllProductsByFourthSubCatId = catchAsyncError(
         });
       }
 
-      const products = await productModel
+      const products = await ProductModel
         .find({ fourthSubCatId: req.params.id })
         .populate("category")
         .skip((page - 1) * perPage)
@@ -643,7 +645,7 @@ export const getAllProductsByFourthSubCatName = catchAsyncError(
     try {
       const page = parseInt(req.query.page) || 1;
       const perPage = parseInt(req.query.perPage) || 10000;
-      const totalPosts = await productModel.countDocuments({
+      const totalPosts = await ProductModel.countDocuments({
         fourthSubCatName: req.query.fourthSubCatName,
       });
       const totalPages = Math.ceil(totalPosts / perPage);
@@ -655,7 +657,7 @@ export const getAllProductsByFourthSubCatName = catchAsyncError(
         });
       }
 
-      const products = await productModel
+      const products = await ProductModel
         .find({ fourthSubCatName: req.query.fourthSubCatName })
         .populate("category")
         .skip((page - 1) * perPage)
@@ -690,7 +692,7 @@ export const getAllProductsByPrice = catchAsyncError(async (req, res, next) => {
   let productList = [];
 
   if (req.query.categoryId !== "" && req.query.categoryId !== undefined) {
-    const productListArr = await productModel
+    const productListArr = await ProductModel
       .find({
         categoryId: req.query.categoryId,
       })
@@ -700,7 +702,7 @@ export const getAllProductsByPrice = catchAsyncError(async (req, res, next) => {
   }
 
   if (req.query.subCatId !== "" && req.query.subCatId !== undefined) {
-    const productListArr = await productModel
+    const productListArr = await ProductModel
       .find({
         subCatId: req.query.subCatId,
       })
@@ -710,7 +712,7 @@ export const getAllProductsByPrice = catchAsyncError(async (req, res, next) => {
   }
 
   if (req.query.thirdSubCatId !== "" && req.query.thirdSubCatId !== undefined) {
-    const productListArr = await productModel
+    const productListArr = await ProductModel
       .find({
         thirdSubCatId: req.query.thirdSubCatId,
       })
@@ -746,7 +748,7 @@ export const getAllProductsByRating = catchAsyncError(
     try {
       const page = parseInt(req.query.page) || 1;
       const perPage = parseInt(req.query.perPage) || 10000;
-      const totalPosts = await productModel.countDocuments();
+      const totalPosts = await ProductModel.countDocuments();
       const totalPages = Math.ceil(totalPosts / perPage);
 
       if (page > totalPages) {
@@ -759,7 +761,7 @@ export const getAllProductsByRating = catchAsyncError(
       let products = [];
 
       if (req.query.categoryId !== "" && req.query.categoryId !== undefined) {
-        products = await productModel
+        products = await ProductModel
           .find({
             rating: req.query.rating,
             categoryId: req.query.categoryId,
@@ -771,7 +773,7 @@ export const getAllProductsByRating = catchAsyncError(
       }
 
       if (req.query.subCatId !== "" && req.query.subCatId !== undefined) {
-        products = await productModel
+        products = await ProductModel
           .find({
             rating: req.query.rating,
             subCatId: req.query.subCatId,
@@ -786,7 +788,7 @@ export const getAllProductsByRating = catchAsyncError(
         req.query.thirdSubCatId !== "" &&
         req.query.thirdSubCatId !== undefined
       ) {
-        products = await productModel
+        products = await ProductModel
           .find({
             rating: req.query.rating,
             thirdSubCatId: req.query.thirdSubCatId,
@@ -837,7 +839,7 @@ export const getProductsCount = catchAsyncError(async (req, res, next) => {
       filter.thirdSubCatId = req.query.thirdSubCatId;
     }
 
-    const count = await productModel.countDocuments(filter);
+    const count = await ProductModel.countDocuments(filter);
 
     res.status(200).json({
       success: true,
@@ -856,7 +858,7 @@ export const getProductsCount = catchAsyncError(async (req, res, next) => {
 export const getAllFeaturedProducts = catchAsyncError(
   async (req, res, next) => {
     try {
-      const products = await productModel
+      const products = await ProductModel
         .find({ isFeatured: true })
         .populate("category")
         .exec();
@@ -886,7 +888,7 @@ export const getAllFeaturedProducts = catchAsyncError(
 export const deleteProduct = catchAsyncError(async (req, res, next) => {
   const productId = req.params.id;
 
-  const product = await productModel.findById(productId).populate("category");
+  const product = await ProductModel.findById(productId).populate("category");
 
   if (!product) {
     return res.status(404).json({
@@ -912,7 +914,7 @@ export const deleteProduct = catchAsyncError(async (req, res, next) => {
     }
   }
 
-  const deleteProduct = await productModel.findByIdAndDelete(productId);
+  const deleteProduct = await ProductModel.findByIdAndDelete(productId);
 
   if (!deleteProduct) {
     return res.status(500).json({
@@ -933,7 +935,7 @@ export const getProduct = catchAsyncError(async (req, res, next) => {
   try {
     const productId = req.params.id;
 
-    const product = await productModel.findById(productId).populate("category");
+    const product = await ProductModel.findById(productId).populate("category");
 
     if (!product) {
       return res.status(404).json({
@@ -1030,17 +1032,20 @@ export const updateProduct = catchAsyncError(async (req, res, next) => {
       color: req.body.color,
     };
 
-    // Remove undefined fields to avoid overwriting with undefined
     Object.keys(updateData).forEach(
       (key) => updateData[key] === undefined && delete updateData[key]
     );
 
-    const updatedProduct = await productModel
-      .findByIdAndUpdate(productId, updateData, {
+    updateData.updatedAt = new Date();
+
+    const updatedProduct = await ProductModel.findByIdAndUpdate(
+      productId,
+      updateData,
+      {
         new: true,
         runValidators: true,
-      })
-      .populate("category");
+      }
+    ).populate("category");
 
     if (!updatedProduct) {
       return res.status(404).json({
@@ -1049,10 +1054,15 @@ export const updateProduct = catchAsyncError(async (req, res, next) => {
       });
     }
 
+    if (req.app.locals.productCache) {
+      delete req.app.locals.productCache[productId];
+    }
+
     res.status(200).json({
       success: true,
       message: "Product updated successfully.",
       product: updatedProduct,
+      timestamp: new Date().getTime(),
     });
   } catch (error) {
     console.error("Update product error:", error);
@@ -1066,7 +1076,7 @@ export const getRelatedProducts = catchAsyncError(async (req, res, next) => {
   try {
     const { productId, categoryName, limit = 10 } = req.query;
 
-    const relatedProducts = await productModel
+    const relatedProducts = await ProductModel
       .find({
         _id: { $ne: productId }, // Exclude current product
         categoryName: categoryName,
