@@ -3,6 +3,7 @@ import ErrorHandler from "../middlewares/error.js";
 import { catchAsyncError } from "../middlewares/catchAsyncError.js";
 import { v2 as cloudinary } from "cloudinary";
 import fs from "fs";
+import ProductModel from "../models/productModel.js";
 
 export const uploadImages = catchAsyncError(async (req, res, next) => {
   try {
@@ -177,39 +178,96 @@ export const createProduct = catchAsyncError(async (req, res, next) => {
 });
 
 //get All Products
-//get All Products - FIXED VERSION
 export const getAllProducts = catchAsyncError(async (req, res, next) => {
   try {
-    console.log("getAllProducts controller called"); // Debug log
-    console.log("Query params:", req.query); // Debug log
-
     const page = parseInt(req.query.page) || 1;
-    const perPage = parseInt(req.query.perPage) || 10; // Default to 10 if not provided
+    const perPage = parseInt(req.query.perPage) || 10;
+    const { search, minPrice, maxPrice, brand, filter } = req.query;
 
-    console.log(`Page: ${page}, PerPage: ${perPage}`); // Debug log
+    // Build query
+    let query = {};
 
-    const totalPosts = await productModel.countDocuments();
-    const totalPages = Math.ceil(totalPosts / perPage);
+    // Add search functionality with better parsing
+    if (search && search.trim() !== "") {
+      const searchLower = search.toLowerCase();
 
-    console.log(`Total products: ${totalPosts}, Total pages: ${totalPages}`); // Debug log
+      // Check if search contains "under" for price filtering
+      const underMatch = searchLower.match(/under\s+(\d+)/);
+      let searchTerm = search;
 
-    if (page > totalPages && totalPages > 0) {
-      return res.status(404).json({
-        success: false,
-        message: "Page not found.",
-      });
+      if (underMatch) {
+        // Extract the price and search term
+        const priceLimit = parseInt(underMatch[1]);
+        searchTerm = search.replace(/under\s+\d+/i, "").trim();
+
+        // Add price constraint
+        query.price = { $lte: priceLimit };
+      }
+
+      // Apply text search
+      if (searchTerm) {
+        query.$and = query.$and || [];
+        query.$and.push({
+          $or: [
+            { name: { $regex: searchTerm, $options: "i" } },
+            { brand: { $regex: searchTerm, $options: "i" } },
+            { categoryName: { $regex: searchTerm, $options: "i" } },
+            { subCatName: { $regex: searchTerm, $options: "i" } },
+            { thirdSubCatName: { $regex: searchTerm, $options: "i" } },
+            { fourthSubCatName: { $regex: searchTerm, $options: "i" } },
+            {
+              "productDetails.description": {
+                $regex: searchTerm,
+                $options: "i",
+              },
+            },
+          ],
+        });
+      }
     }
 
-    const products = await productModel
-      .find()
+    // Add price filter from URL params
+    if (minPrice || maxPrice) {
+      query.price = query.price || {};
+      if (minPrice) query.price.$gte = parseInt(minPrice);
+      if (maxPrice) query.price.$lte = parseInt(maxPrice);
+    }
+
+    // Add brand filter
+    if (brand) {
+      const brands = Array.isArray(brand)
+        ? brand
+        : String(brand)
+            .split(",")
+            .map((b) => b.trim())
+            .filter(Boolean);
+
+      if (brands.length === 1) {
+        const escaped = brands[0].replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+        query.brand = { $regex: escaped, $options: "i" };
+      } else {
+        // match any of the provided brands (case-insensitive)
+        query.brand = {
+          $in: brands.map(
+            (b) => new RegExp(b.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i")
+          ),
+        };
+      }
+    }
+
+    console.log("Search query built:", JSON.stringify(query, null, 2));
+
+    const totalPosts = await ProductModel.countDocuments(query);
+    const totalPages = Math.ceil(totalPosts / perPage);
+
+    const products = await ProductModel.find(query)
       .populate("category")
       .skip((page - 1) * perPage)
       .limit(perPage)
       .exec();
 
-    console.log(`Found ${products.length} products`); // Debug log
+    console.log(`Found ${products.length} products for search: "${search}"`);
 
-    // Don't return 404 if no products exist - return empty array instead
     res.status(200).json({
       success: true,
       count: products.length,
@@ -273,9 +331,6 @@ export const getAllProductsByCatId = catchAsyncError(async (req, res, next) => {
 export const getAllProductsByCatName = catchAsyncError(
   async (req, res, next) => {
     try {
-      console.log("getAllProductsByCatName controller called"); // Debug log
-      console.log("Query params:", req.query); // Debug log
-
       const page = parseInt(req.query.page) || 1;
       const perPage = parseInt(req.query.perPage) || 10000;
 
@@ -1010,7 +1065,7 @@ export const updateProduct = catchAsyncError(async (req, res, next) => {
 export const getRelatedProducts = catchAsyncError(async (req, res, next) => {
   try {
     const { productId, categoryName, limit = 10 } = req.query;
-    
+
     const relatedProducts = await productModel
       .find({
         _id: { $ne: productId }, // Exclude current product
@@ -1018,7 +1073,7 @@ export const getRelatedProducts = catchAsyncError(async (req, res, next) => {
       })
       .limit(parseInt(limit))
       .populate("category");
-    
+
     res.status(200).json({
       success: true,
       products: relatedProducts,
@@ -1027,3 +1082,348 @@ export const getRelatedProducts = catchAsyncError(async (req, res, next) => {
     return next(new ErrorHandler("Failed to fetch related products", 500));
   }
 });
+
+export const getSearchSuggestions = async (req, res) => {
+  try {
+    const { query } = req.query;
+
+    if (!query || query.trim() === "") {
+      return res.json({
+        success: true,
+        suggestions: [],
+      });
+    }
+
+    // Get all available brands from database
+    const availableBrands = await ProductModel.distinct("brand");
+    const validBrands = availableBrands.filter(
+      (brand) => brand && brand.trim() !== ""
+    );
+
+    // Parse query for price and brand
+    const queryLower = query.toLowerCase();
+    let priceLimit = null;
+    let brandName = null;
+    let searchTerm = query;
+
+    // Extract price if mentioned
+    const priceMatch = queryLower.match(/under\s+(\d+)/);
+    if (priceMatch) {
+      priceLimit = parseInt(priceMatch[1]);
+      searchTerm = searchTerm.replace(/under\s+\d+/i, "").trim();
+    }
+
+    // Check for brands in the query dynamically
+    for (const brand of validBrands) {
+      if (queryLower.includes(brand.toLowerCase())) {
+        brandName = brand;
+        searchTerm = searchTerm.replace(new RegExp(brand, "i"), "").trim();
+        break;
+      }
+    }
+
+    // Build search query
+    let searchQuery = {
+      $or: [
+        { name: { $regex: searchTerm, $options: "i" } },
+        { categoryName: { $regex: searchTerm, $options: "i" } },
+        { subCatName: { $regex: searchTerm, $options: "i" } },
+      ],
+    };
+
+    // Add brand filter if found
+    if (brandName) {
+      searchQuery.brand = { $regex: brandName, $options: "i" };
+    }
+
+    // Add price filter if found
+    if (priceLimit) {
+      searchQuery.price = { $lte: priceLimit };
+    }
+
+    // Get products matching the query
+    const products = await ProductModel.find(searchQuery)
+      .select("price categoryName brand name")
+      .limit(50);
+
+    // Generate smart suggestions
+    const suggestions = [];
+
+    // Add the exact query as first suggestion
+    suggestions.push({
+      type: "search",
+      text: query,
+      displayText: query,
+      icon: "search",
+      query: searchTerm,
+      maxPrice: priceLimit,
+      brand: brandName,
+    });
+
+    // If products found, add more specific suggestions
+    if (products.length > 0) {
+      // Get actual price ranges from products
+      const prices = products
+        .map((p) => p.price)
+        .filter((p) => p > 0)
+        .sort((a, b) => a - b);
+
+      if (prices.length > 0 && !priceLimit) {
+        const minPrice = prices[0];
+        const maxPrice = prices[prices.length - 1];
+
+        // Generate dynamic price ranges based on actual prices
+        const priceSteps = [];
+        if (minPrice < 500) priceSteps.push(500);
+        if (minPrice < 1000 && maxPrice > 500) priceSteps.push(1000);
+        if (minPrice < 2000 && maxPrice > 1000) priceSteps.push(2000);
+        if (minPrice < 5000 && maxPrice > 2000) priceSteps.push(5000);
+        if (maxPrice > 5000) priceSteps.push(10000);
+
+        priceSteps.forEach((price) => {
+          if (price > minPrice && price < maxPrice * 1.5) {
+            suggestions.push({
+              type: "price",
+              text: `${searchTerm} under ${price}`,
+              displayText: `${searchTerm} under ₹${price}`,
+              query: searchTerm,
+              maxPrice: price,
+              brand: brandName,
+              icon: "price",
+            });
+          }
+        });
+      }
+
+      // Add actual brands from search results if no brand was specified
+      if (!brandName) {
+        const foundBrands = [
+          ...new Set(products.map((p) => p.brand).filter(Boolean)),
+        ];
+        foundBrands.slice(0, 3).forEach((brand) => {
+          suggestions.push({
+            type: "brand",
+            text: `${brand} ${searchTerm}`,
+            displayText: `${brand} ${searchTerm}`,
+            query: searchTerm,
+            brand: brand,
+            maxPrice: priceLimit,
+            icon: "brand",
+          });
+        });
+      }
+
+      // Add actual categories from search results
+      const foundCategories = [
+        ...new Set(products.map((p) => p.categoryName).filter(Boolean)),
+      ];
+      foundCategories.slice(0, 3).forEach((category) => {
+        suggestions.push({
+          type: "category",
+          text: `${searchTerm} in ${category}`,
+          displayText: `${searchTerm} in ${category}`,
+          query: searchTerm,
+          category: category,
+          maxPrice: priceLimit,
+          brand: brandName,
+          icon: "category",
+        });
+      });
+    }
+
+    res.json({
+      success: true,
+      suggestions: suggestions.slice(0, 10),
+    });
+  } catch (error) {
+    console.error("Search suggestions error:", error);
+    res.status(500).json({
+      success: false,
+      message: error.message,
+    });
+  }
+};
+
+export const searchProducts = catchAsyncError(async (req, res, next) => {
+  try {
+    const {
+      query,
+      page = 1,
+      perPage = 20,
+      minPrice,
+      maxPrice,
+      brand,
+      filter,
+    } = req.query;
+
+    if (!query || query.trim() === "") {
+      return res.json({
+        success: true,
+        products: [],
+        count: 0,
+        message: "No search query provided",
+      });
+    }
+
+    // Create search query
+    let searchQuery = {
+      $or: [
+        { name: { $regex: query, $options: "i" } },
+        { brand: { $regex: query, $options: "i" } },
+        { categoryName: { $regex: query, $options: "i" } },
+        { subCatName: { $regex: query, $options: "i" } },
+      ],
+    };
+
+    // Add price filter
+    if (minPrice || maxPrice) {
+      searchQuery.price = {};
+      if (minPrice) searchQuery.price.$gte = Number(minPrice);
+      if (maxPrice) searchQuery.price.$lte = Number(maxPrice);
+    }
+
+    // Add brand filter
+    if (brand) {
+      searchQuery.brand = { $regex: brand, $options: "i" };
+    }
+
+    const products = await ProductModel.find(searchQuery)
+      .populate("category")
+      .skip((page - 1) * perPage)
+      .limit(parseInt(perPage))
+      .exec();
+
+    res.status(200).json({
+      success: true,
+      products: products,
+      count: products.length,
+    });
+  } catch (error) {
+    return next(new ErrorHandler("Failed to search products", 500));
+  }
+});
+
+// export const getAvailableBrands = catchAsyncError(async (req, res, next) => {
+//   try {
+//     // Get all unique brands from products
+//     const brands = await ProductModel.distinct("brand");
+
+//     // Filter out empty strings and null values
+//     const validBrands = brands.filter((brand) => brand && brand.trim() !== "");
+
+//     res.status(200).json({
+//       success: true,
+//       brands: validBrands.sort(), // Sort alphabetically
+//       count: validBrands.length,
+//     });
+//   } catch (error) {
+//     console.error("Get brands error:", error);
+//     return next(new ErrorHandler("Failed to fetch brands", 500));
+//   }
+// });
+
+export const getPopularSearches = catchAsyncError(async (req, res, next) => {
+  try {
+    // Get top categories
+    const topCategories = await ProductModel.aggregate([
+      { $group: { _id: "$categoryName", count: { $sum: 1 } } },
+      { $sort: { count: -1 } },
+      { $limit: 5 },
+      { $match: { _id: { $ne: null, $ne: "" } } },
+    ]);
+
+    // Get top brands
+    const topBrands = await ProductModel.aggregate([
+      { $group: { _id: "$brand", count: { $sum: 1 } } },
+      { $sort: { count: -1 } },
+      { $limit: 5 },
+      { $match: { _id: { $ne: null, $ne: "" } } },
+    ]);
+
+    // Get some product names for popular searches
+    const popularProducts = await ProductModel.find({})
+      .select("name")
+      .sort({ rating: -1 })
+      .limit(5);
+
+    // Combine into popular searches
+    const popularSearches = [
+      ...topCategories.map((cat) => cat._id),
+      ...topBrands.map((brand) => brand._id),
+      ...popularProducts.map((product) => {
+        // Extract key words from product names
+        const words = product.name.split(" ");
+        return words[0]; // Take first word as search term
+      }),
+    ].filter((value, index, self) => self.indexOf(value) === index); // Remove duplicates
+
+    res.status(200).json({
+      success: true,
+      popularSearches: popularSearches.slice(0, 10),
+    });
+  } catch (error) {
+    console.error("Get popular searches error:", error);
+    return next(new ErrorHandler("Failed to fetch popular searches", 500));
+  }
+});
+
+// export const getFilterOptions = catchAsyncError(async (req, res, next) => {
+//   try {
+//     const { category, search } = req.query;
+
+//     let query = {};
+//     if (category) {
+//       query.categoryName = { $regex: category, $options: "i" };
+//     }
+//     if (search) {
+//       query.$or = [
+//         { name: { $regex: search, $options: "i" } },
+//         { brand: { $regex: search, $options: "i" } },
+//         { categoryName: { $regex: search, $options: "i" } },
+//       ];
+//     }
+
+//     // Get all products matching the query
+//     const products = await ProductModel.find(query).select(
+//       "brand price color categoryName subCatName"
+//     );
+
+//     // Extract unique values
+//     const brands = [
+//       ...new Set(products.map((p) => p.brand).filter(Boolean)),
+//     ].sort();
+//     const categories = [
+//       ...new Set(products.map((p) => p.categoryName).filter(Boolean)),
+//     ].sort();
+//     const subCategories = [
+//       ...new Set(products.map((p) => p.subCatName).filter(Boolean)),
+//     ].sort();
+//     const colors = [
+//       ...new Set(products.map((p) => p.color).filter(Boolean)),
+//     ].sort();
+
+//     // Calculate price range
+//     const prices = products.map((p) => p.price).filter((p) => p > 0);
+//     const priceRange =
+//       prices.length > 0
+//         ? {
+//             min: Math.min(...prices),
+//             max: Math.max(...prices),
+//           }
+//         : { min: 0, max: 10000 };
+
+//     res.status(200).json({
+//       success: true,
+//       filters: {
+//         brands,
+//         categories,
+//         subCategories,
+//         colors,
+//         priceRange,
+//       },
+//     });
+//   } catch (error) {
+//     console.error("Get filter options error:", error);
+//     return next(new ErrorHandler("Failed to fetch filter options", 500));
+//   }
+// });

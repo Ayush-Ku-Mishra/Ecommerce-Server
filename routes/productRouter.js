@@ -22,6 +22,9 @@ import {
   removeImageFromCloudinary,
   updateProduct,
   getRelatedProducts,
+  getSearchSuggestions,
+  searchProducts,
+  getPopularSearches,
 } from "../controllers/productController.js";
 
 const ProductRouter = express.Router();
@@ -72,5 +75,12 @@ ProductRouter.delete(
 );
 ProductRouter.put("/update/:id", isAuthenticated, updateProduct);
 ProductRouter.get("/getRelatedProducts", isAuthenticated, getRelatedProducts);
+
+ProductRouter.get("/search-suggestions", getSearchSuggestions);
+ProductRouter.get("/search", searchProducts);
+
+// ProductRouter.get("/brands", getAvailableBrands);
+ProductRouter.get("/popular-searches", getPopularSearches);
+// ProductRouter.get("/filter-options", getFilterOptions);
 
 export default ProductRouter;
