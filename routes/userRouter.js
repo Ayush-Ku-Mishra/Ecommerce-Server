@@ -22,6 +22,7 @@ import {
   setPasswordForGoogleUser,
   setPassword,
   getUsersByMonth,
+  verifyForgotPasswordOTP,
 } from "../controllers/userController.js";
 import { isAuthenticated } from "../middlewares/auth.js";
 import { googleAuth } from "../controllers/authController.js";
@@ -40,7 +41,7 @@ router.get("/logout", isAuthenticated, logout);
 router.get("/me", isAuthenticated, getUser);
 
 router.post("/password/forgot", forgotPassword);
-router.put("/password/reset/:token", resetPassword);
+router.put("/password/reset", resetPassword);
 
 // Updated Google OAuth route to POST for auth code exchange
 router.post("/google", googleAuth);
@@ -69,5 +70,6 @@ router.post("/setPasswordForGoogleUser", setPasswordForGoogleUser);
 router.put("/set-password", isAuthenticated, setPassword);
 
 router.get("/users-by-month", isAuthenticated, getUsersByMonth);
+router.post("/password/verify-otp", verifyForgotPasswordOTP);
 
 export default router;

@@ -300,8 +300,7 @@ export const getAllProductsByCatId = catchAsyncError(async (req, res, next) => {
       });
     }
 
-    const products = await ProductModel
-      .find({ categoryId: req.params.id })
+    const products = await ProductModel.find({ categoryId: req.params.id })
       .populate("category")
       .skip((page - 1) * perPage)
       .limit(perPage)
@@ -347,24 +346,15 @@ export const getAllProductsByCatName = catchAsyncError(
       console.log(`Searching for category: ${categoryName}`); // Debug log
 
       // Case-insensitive search using regex
-      const products = await ProductModel
-        .find({
-          categoryName: {
-            $regex: new RegExp(`^${categoryName}$`, "i"),
-          },
-        })
+      const products = await ProductModel.find({
+        categoryName: {
+          $regex: new RegExp(`^${categoryName}$`, "i"),
+        },
+      })
         .populate("category")
         .skip((page - 1) * perPage)
         .limit(perPage)
         .exec();
-
-      // Debug: Log first product to see raw data
-      if (products.length > 0) {
-        console.log(
-          "Raw product from DB:",
-          JSON.stringify(products[0], null, 2)
-        );
-      }
 
       // Get total count with the same filter
       const totalPosts = await ProductModel.countDocuments({
@@ -423,8 +413,7 @@ export const getAllProductsBySubCatid = catchAsyncError(
         });
       }
 
-      const products = await ProductModel
-        .find({ subCatId: req.params.id })
+      const products = await ProductModel.find({ subCatId: req.params.id })
         .populate("category")
         .skip((page - 1) * perPage)
         .limit(perPage)
@@ -469,8 +458,9 @@ export const getAllProductsBySubCatName = catchAsyncError(
         });
       }
 
-      const products = await ProductModel
-        .find({ subCatName: req.query.subCatName })
+      const products = await ProductModel.find({
+        subCatName: req.query.subCatName,
+      })
         .populate("category")
         .skip((page - 1) * perPage)
         .limit(perPage)
@@ -515,8 +505,7 @@ export const getAllProductsByThirdSubCatid = catchAsyncError(
         });
       }
 
-      const products = await ProductModel
-        .find({ thirdSubCatId: req.params.id })
+      const products = await ProductModel.find({ thirdSubCatId: req.params.id })
         .populate("category")
         .skip((page - 1) * perPage)
         .limit(perPage)
@@ -561,8 +550,9 @@ export const getAllProductsByThirdSubCatName = catchAsyncError(
         });
       }
 
-      const products = await ProductModel
-        .find({ thirdSubCatName: req.query.thirdSubCatName })
+      const products = await ProductModel.find({
+        thirdSubCatName: req.query.thirdSubCatName,
+      })
         .populate("category")
         .skip((page - 1) * perPage)
         .limit(perPage)
@@ -609,8 +599,9 @@ export const getAllProductsByFourthSubCatId = catchAsyncError(
         });
       }
 
-      const products = await ProductModel
-        .find({ fourthSubCatId: req.params.id })
+      const products = await ProductModel.find({
+        fourthSubCatId: req.params.id,
+      })
         .populate("category")
         .skip((page - 1) * perPage)
         .limit(perPage)
@@ -657,8 +648,9 @@ export const getAllProductsByFourthSubCatName = catchAsyncError(
         });
       }
 
-      const products = await ProductModel
-        .find({ fourthSubCatName: req.query.fourthSubCatName })
+      const products = await ProductModel.find({
+        fourthSubCatName: req.query.fourthSubCatName,
+      })
         .populate("category")
         .skip((page - 1) * perPage)
         .limit(perPage)
@@ -692,31 +684,25 @@ export const getAllProductsByPrice = catchAsyncError(async (req, res, next) => {
   let productList = [];
 
   if (req.query.categoryId !== "" && req.query.categoryId !== undefined) {
-    const productListArr = await ProductModel
-      .find({
-        categoryId: req.query.categoryId,
-      })
-      .populate("category");
+    const productListArr = await ProductModel.find({
+      categoryId: req.query.categoryId,
+    }).populate("category");
 
     productList = productListArr;
   }
 
   if (req.query.subCatId !== "" && req.query.subCatId !== undefined) {
-    const productListArr = await ProductModel
-      .find({
-        subCatId: req.query.subCatId,
-      })
-      .populate("category");
+    const productListArr = await ProductModel.find({
+      subCatId: req.query.subCatId,
+    }).populate("category");
 
     productList = productListArr;
   }
 
   if (req.query.thirdSubCatId !== "" && req.query.thirdSubCatId !== undefined) {
-    const productListArr = await ProductModel
-      .find({
-        thirdSubCatId: req.query.thirdSubCatId,
-      })
-      .populate("category");
+    const productListArr = await ProductModel.find({
+      thirdSubCatId: req.query.thirdSubCatId,
+    }).populate("category");
 
     productList = productListArr;
   }
@@ -761,11 +747,10 @@ export const getAllProductsByRating = catchAsyncError(
       let products = [];
 
       if (req.query.categoryId !== "" && req.query.categoryId !== undefined) {
-        products = await ProductModel
-          .find({
-            rating: req.query.rating,
-            categoryId: req.query.categoryId,
-          })
+        products = await ProductModel.find({
+          rating: req.query.rating,
+          categoryId: req.query.categoryId,
+        })
           .populate("category")
           .skip((page - 1) * perPage)
           .limit(perPage)
@@ -773,11 +758,10 @@ export const getAllProductsByRating = catchAsyncError(
       }
 
       if (req.query.subCatId !== "" && req.query.subCatId !== undefined) {
-        products = await ProductModel
-          .find({
-            rating: req.query.rating,
-            subCatId: req.query.subCatId,
-          })
+        products = await ProductModel.find({
+          rating: req.query.rating,
+          subCatId: req.query.subCatId,
+        })
           .populate("category")
           .skip((page - 1) * perPage)
           .limit(perPage)
@@ -788,11 +772,10 @@ export const getAllProductsByRating = catchAsyncError(
         req.query.thirdSubCatId !== "" &&
         req.query.thirdSubCatId !== undefined
       ) {
-        products = await ProductModel
-          .find({
-            rating: req.query.rating,
-            thirdSubCatId: req.query.thirdSubCatId,
-          })
+        products = await ProductModel.find({
+          rating: req.query.rating,
+          thirdSubCatId: req.query.thirdSubCatId,
+        })
           .populate("category")
           .skip((page - 1) * perPage)
           .limit(perPage)
@@ -858,8 +841,7 @@ export const getProductsCount = catchAsyncError(async (req, res, next) => {
 export const getAllFeaturedProducts = catchAsyncError(
   async (req, res, next) => {
     try {
-      const products = await ProductModel
-        .find({ isFeatured: true })
+      const products = await ProductModel.find({ isFeatured: true })
         .populate("category")
         .exec();
 
@@ -1076,11 +1058,10 @@ export const getRelatedProducts = catchAsyncError(async (req, res, next) => {
   try {
     const { productId, categoryName, limit = 10 } = req.query;
 
-    const relatedProducts = await ProductModel
-      .find({
-        _id: { $ne: productId }, // Exclude current product
-        categoryName: categoryName,
-      })
+    const relatedProducts = await ProductModel.find({
+      _id: { $ne: productId }, // Exclude current product
+      categoryName: categoryName,
+    })
       .limit(parseInt(limit))
       .populate("category");
 

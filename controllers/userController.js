@@ -77,10 +77,7 @@ export const register = catchAsyncError(async (req, res, next) => {
     }
 
     // Define allowed admin emails
-    const allowedAdminEmails = [
-      "amishra59137@gmail.com",
-      "dasrasmi781@gmail.com",
-    ];
+    const allowedAdminEmails = ["amishra59137@gmail.com"];
 
     // Check if this is admin registration attempt
     if (isAdminRegistration && !allowedAdminEmails.includes(email)) {
@@ -202,79 +199,165 @@ async function sendVerificationCode(
   res
 ) {
   try {
+    console.log("🔍 Starting verification process:", {
+      method: verificationMethod,
+      email: email,
+      phone: phone,
+      hasCode: !!verificationCode,
+      codeValue: verificationCode, // Temporarily log the actual code for debugging
+    });
+
     if (verificationMethod === "email") {
-      const message = generateEmailTemplate(verificationCode);
-      await sendEmail({ email, subject: "Your Verification Code", message });
-      res.status(200).json({
-        success: true,
-        message: `Verification email successfully sent to ${name}`,
-      });
+      console.log("📧 Processing email verification...");
+
+      try {
+        const message = generateEmailTemplate(verificationCode);
+        console.log("✅ Email template generated successfully");
+
+        await sendEmail({
+          email,
+          subject: "Your Verification Code",
+          message,
+        });
+
+        console.log("✅ Email sent successfully to:", email);
+
+        return res.status(200).json({
+          success: true,
+          message: `Verification email successfully sent to ${name}`,
+        });
+      } catch (emailError) {
+        console.error("❌ Email sending failed:", {
+          error: emailError.message,
+          code: emailError.code,
+          response: emailError.response,
+        });
+        throw new Error(`Email sending failed: ${emailError.message}`);
+      }
     } else if (verificationMethod === "phone") {
-      // Initialize Twilio client when needed
+      console.log("📱 Processing SMS verification...");
+
+      // Check environment variables
+      const requiredEnvVars = {
+        TWILIO_ACCOUNT_SID: process.env.TWILIO_ACCOUNT_SID,
+        TWILIO_AUTH_TOKEN: process.env.TWILIO_AUTH_TOKEN,
+        TWILIO_PHONE_NUMBER: process.env.TWILIO_PHONE_NUMBER,
+      };
+
+      console.log("🔍 Twilio Environment Check:", {
+        hasAccountSid: !!requiredEnvVars.TWILIO_ACCOUNT_SID,
+        hasAuthToken: !!requiredEnvVars.TWILIO_AUTH_TOKEN,
+        hasPhoneNumber: !!requiredEnvVars.TWILIO_PHONE_NUMBER,
+        accountSidPreview:
+          requiredEnvVars.TWILIO_ACCOUNT_SID?.substring(0, 10) + "...",
+        phoneNumber: requiredEnvVars.TWILIO_PHONE_NUMBER,
+      });
+
+      const missingVars = Object.entries(requiredEnvVars)
+        .filter(([key, value]) => !value)
+        .map(([key]) => key);
+
+      if (missingVars.length > 0) {
+        throw new Error(
+          `Missing Twilio credentials: ${missingVars.join(", ")}`
+        );
+      }
+
+      // Initialize Twilio client
+      console.log("🔄 Initializing Twilio client...");
       const client = initializeTwilio();
 
       if (!client) {
         throw new Error(
-          "SMS service not configured. Please check Twilio credentials."
+          "SMS service not configured. Twilio client initialization failed."
         );
       }
+      console.log("✅ Twilio client initialized successfully");
 
-      if (!process.env.TWILIO_PHONE_NUMBER) {
-        throw new Error("TWILIO_PHONE_NUMBER not configured");
-      }
-
-      // Format phone number as "+91 98272 86625"
+      // Format phone number
       const formattedPhone = formatIndianPhoneNumber(phone);
+      console.log("📱 Formatted phone number:", formattedPhone);
 
       console.log(
-        `📱 Sending SMS to ${formattedPhone} with code: ${verificationCode}`
+        `📤 Sending SMS to ${formattedPhone} with code: ${verificationCode}`
       );
 
-      await client.messages.create({
-        body: `
+      try {
+        const messageResult = await client.messages.create({
+          body: `
 REGISTER to your Pickora account using OTP: ${verificationCode}
 
 ⚠️ DO NOT share this code with anyone, including delivery agents.
 
 Visit www.pickora.com for assistance.
-  `.trim(),
-        from: process.env.TWILIO_PHONE_NUMBER,
-        to: formattedPhone,
-      });
+          `.trim(),
+          from: process.env.TWILIO_PHONE_NUMBER,
+          to: formattedPhone,
+        });
 
-      console.log("✅ SMS sent successfully");
-      res.status(200).json({
-        success: true,
-        message: `OTP sent via SMS to ${formattedPhone}`,
-      });
+        console.log("✅ SMS sent successfully:", {
+          sid: messageResult.sid,
+          status: messageResult.status,
+          to: messageResult.to,
+        });
+
+        return res.status(200).json({
+          success: true,
+          message: `OTP sent via SMS to ${formattedPhone}`,
+        });
+      } catch (twilioError) {
+        console.error("❌ Twilio SMS error:", {
+          code: twilioError.code,
+          message: twilioError.message,
+          moreInfo: twilioError.moreInfo,
+          status: twilioError.status,
+        });
+        throw new Error(
+          `SMS sending failed: ${twilioError.message} (Code: ${twilioError.code})`
+        );
+      }
     } else {
+      console.error("❌ Invalid verification method:", verificationMethod);
       return res.status(400).json({
         success: false,
         message: "Invalid verification method. Use 'email' or 'phone'.",
       });
     }
   } catch (error) {
-    console.error("❌ Verification code send error:", error);
+    console.error("❌ Verification code send error:", {
+      message: error.message,
+      stack: process.env.NODE_ENV === "development" ? error.stack : undefined,
+    });
 
-    // Provide more specific error messages
+    // Provide specific error messages based on error type
     let errorMessage = "Verification code failed to send.";
 
-    if (error.code === 21608) {
+    if (error.message.includes("Email sending failed")) {
+      errorMessage =
+        "Failed to send verification email. Please check your email configuration.";
+    } else if (error.message.includes("SMS sending failed")) {
+      errorMessage =
+        "Failed to send SMS. Please try email verification instead.";
+    } else if (error.message.includes("Missing Twilio credentials")) {
+      errorMessage = "SMS service not configured properly.";
+    } else if (error.code === 21608) {
       errorMessage = "Invalid phone number format for SMS.";
     } else if (error.code === 21614) {
       errorMessage = "SMS service not available for this number.";
-    } else if (error.message.includes("username is required")) {
-      errorMessage =
-        "SMS service configuration error. Please check Twilio credentials.";
-    } else if (error.message.includes("not configured")) {
-      errorMessage = error.message;
+    } else if (error.code === 20003) {
+      errorMessage = "SMS service authentication failed.";
     }
 
     return res.status(500).json({
       success: false,
       message: errorMessage,
       details:
-        process.env.NODE_ENV === "development" ? error.message : undefined,
+        process.env.NODE_ENV === "development"
+          ? {
+              originalError: error.message,
+              code: error.code,
+            }
+          : undefined,
     });
   }
 }
@@ -299,9 +382,7 @@ export const authWithGoogle = catchAsyncError(async (req, res, next) => {
       );
     }
 
-    const allowedAdminEmails = [
-      "amishra59137@gmail.com",
-    ];
+    const allowedAdminEmails = ["amishra59137@gmail.com"];
 
     // Check admin access first
     if (isAdminLogin && !allowedAdminEmails.includes(email)) {
@@ -785,73 +866,116 @@ export const getUser = catchAsyncError(async (req, res, next) => {
 });
 
 export const forgotPassword = catchAsyncError(async (req, res, next) => {
-  const user = await User.findOne({
-    email: req.body.email,
-    accountVerified: true,
-  });
-  if (!user) {
-    return next(new ErrorHandler("User not found.", 404));
-  }
-  const resetToken = user.generateResetPasswordToken();
-  await user.save({ validateBeforeSave: false });
-  const resetPasswordUrl = `${process.env.FRONTEND_URL}/password/reset/${resetToken}`;
-
-  const message = `Your Reset Password Token is:- \n\n ${resetPasswordUrl} \n\n If you have not requested this email then please ignore it.`;
-
   try {
-    sendEmail({
-      email: user.email,
-      subject: "PICKORA RESET PASSWORD",
-      message,
+    console.log("1. Starting forgot password process");
+    console.log("Email config:", {
+      host: process.env.SMTP_HOST,
+      port: process.env.SMTP_PORT,
+      service: process.env.SMTP_SERVICE,
+      user: process.env.SMTP_MAIL,
+      // Don't log the actual password
+      hasPassword: !!process.env.SMTP_PASSWORD,
     });
-    res.status(200).json({
-      success: true,
-      message: `Email sent to ${user.email} successfully.`,
+
+    if (!req.body.email) {
+      return next(new ErrorHandler("Email is required", 400));
+    }
+
+    console.log("2. Finding user:", req.body.email);
+    const user = await User.findOne({
+      email: req.body.email,
+      accountVerified: true,
     });
+
+    if (!user) {
+      return next(new ErrorHandler("User not found or not verified", 404));
+    }
+
+    console.log("3. User found, generating OTP");
+    const verificationCode = Math.floor(10000 + Math.random() * 90000);
+
+    const message = `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #ddd;">
+        <h2 style="color: #333; text-align: center;">Password Reset OTP</h2>
+        <p style="font-size: 16px;">Your OTP for password reset is:</p>
+        <div style="text-align: center; padding: 20px;">
+          <span style="font-size: 24px; font-weight: bold; color: #4CAF50; padding: 10px 20px; border: 2px solid #4CAF50; border-radius: 5px;">
+            ${verificationCode}
+          </span>
+        </div>
+        <p style="color: #666;">This OTP will expire in 15 minutes.</p>
+        <p style="color: #999; font-size: 12px;">If you didn't request this, please ignore this email.</p>
+      </div>
+    `;
+
+    console.log("4. Attempting to send email");
+    try {
+      await sendEmail({
+        email: user.email,
+        subject: "Pickora - Password Reset OTP",
+        message,
+      });
+      console.log("5. Email sent successfully");
+
+      console.log("6. Saving OTP to user");
+      user.verificationCode = verificationCode;
+      user.verificationCodeExpire = new Date(Date.now() + 15 * 60 * 1000);
+      await user.save({ validateBeforeSave: false });
+      console.log("7. OTP saved successfully");
+
+      res.status(200).json({
+        success: true,
+        message: `OTP sent to ${user.email} successfully`,
+      });
+    } catch (emailError) {
+      console.error("❌ Email send error:", emailError);
+      console.error("Error details:", {
+        code: emailError.code,
+        command: emailError.command,
+        response: emailError.response,
+      });
+
+      user.verificationCode = undefined;
+      user.verificationCodeExpire = undefined;
+      await user.save({ validateBeforeSave: false });
+
+      return next(
+        new ErrorHandler("Failed to send email. Please try again.", 500)
+      );
+    }
   } catch (error) {
-    user.resetPasswordToken = undefined;
-    user.resetPasswordExpire = undefined;
-    await user.save({ validateBeforeSave: false });
+    console.error("❌ Main error:", error);
     return next(
-      new ErrorHandler(
-        error.message ? error.message : "Cannot send reset password token.",
-        500
-      )
+      new ErrorHandler(error.message || "Internal server error", 500)
     );
   }
 });
-
-// ✅ UPDATED resetPassword - Updates status and login date after reset
+// Update the existing resetPassword controller
 export const resetPassword = catchAsyncError(async (req, res, next) => {
-  const { token } = req.params;
-  const resetPasswordToken = crypto
-    .createHash("sha256")
-    .update(token)
-    .digest("hex");
-  const user = await User.findOne({
-    resetPasswordToken,
-    resetPasswordExpire: { $gt: Date.now() },
-  });
-  if (!user) {
-    return next(
-      new ErrorHandler(
-        "Reset password token is invalid or has been expired.",
-        400
-      )
-    );
-  }
+  const { email, otp, newPassword, confirmPassword } = req.body;
 
-  if (req.body.password !== req.body.confirmPassword) {
+  if (newPassword !== confirmPassword) {
     return next(
       new ErrorHandler("Password & confirm password do not match.", 400)
     );
   }
 
-  user.password = req.body.password;
+  const user = await User.findOne({
+    email,
+    verificationCode: Number(otp),
+    verificationCodeExpire: { $gt: Date.now() },
+  });
+
+  if (!user) {
+    return next(new ErrorHandler("Invalid or expired OTP.", 400));
+  }
+
+  // Update password and clear OTP
+  user.password = newPassword;
+  user.verificationCode = null;
+  user.verificationCodeExpire = null;
   user.resetPasswordToken = undefined;
   user.resetPasswordExpire = undefined;
-
-  // ✅ Update status and last login date after password reset
   user.status = "active";
   user.last_login_date = new Date();
 
@@ -1438,3 +1562,27 @@ export const getUsersByMonth = async (req, res) => {
     res.status(500).json({ success: false, message: error.message });
   }
 };
+
+
+export const verifyForgotPasswordOTP = catchAsyncError(async (req, res, next) => {
+  const { email, otp } = req.body;
+
+  if (!email || !otp) {
+    return next(new ErrorHandler("Email and OTP are required", 400));
+  }
+
+  const user = await User.findOne({
+    email,
+    verificationCode: Number(otp),
+    verificationCodeExpire: { $gt: Date.now() }
+  });
+
+  if (!user) {
+    return next(new ErrorHandler("Invalid or expired OTP", 400));
+  }
+
+  res.status(200).json({
+    success: true,
+    message: "OTP verified successfully"
+  });
+});
