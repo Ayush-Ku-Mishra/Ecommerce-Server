@@ -798,7 +798,6 @@ export const adminLogin = catchAsyncError(async (req, res, next) => {
 
   const allowedAdminEmails = [
     "amishra59137@gmail.com",
-    "dasrasmi781@gmail.com",
   ]; // Your whitelist
 
   if (!email || !password) {
