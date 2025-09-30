@@ -25,6 +25,7 @@ import {
   getSearchSuggestions,
   searchProducts,
   getPopularSearches,
+  getProductStock,
 } from "../controllers/productController.js";
 
 const ProductRouter = express.Router();
@@ -82,5 +83,7 @@ ProductRouter.get("/search", searchProducts);
 // ProductRouter.get("/brands", getAvailableBrands);
 ProductRouter.get("/popular-searches", getPopularSearches);
 // ProductRouter.get("/filter-options", getFilterOptions);
+
+ProductRouter.get("/:id/stock", getProductStock);
 
 export default ProductRouter;

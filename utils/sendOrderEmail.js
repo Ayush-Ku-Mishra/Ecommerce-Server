@@ -42,7 +42,7 @@ export const sendOrderConfirmationEmail = async (userEmail, orderData) => {
             </p>
 
             <div style="text-align: center; margin: 30px 0;">
-              <a href="https://pickora.netlify.com/account/orders/${orderData.orderId}" 
+              <a href="https://pickora.netlify.app/account/orders/${orderData.orderId}" 
                  style="display: inline-block; background: #6e48aa; color: white; padding: 12px 30px; border-radius: 25px; text-decoration: none; font-weight: 600; font-size: 16px;">
                  👉 Track Your Order
               </a>
@@ -52,7 +52,7 @@ export const sendOrderConfirmationEmail = async (userEmail, orderData) => {
 
             <h3 style="color: #333; font-size: 18px;">Need Help?</h3>
             <p style="font-size: 15px; color: #555; line-height: 1.6;">
-              Visit our <a href="https://pickora.netlify.com" style="color: #6e48aa; font-weight: 600; text-decoration: none;">Help Center</a> or reply to this email — we’re here for you!
+              Visit our <a href="https://pickora.netlify.app/help" style="color: #6e48aa; font-weight: 600; text-decoration: none;">Help Center</a> or reply to this email — we're here for you!
             </p>
           </div>
 

@@ -1418,3 +1418,51 @@ export const getPopularSearches = catchAsyncError(async (req, res, next) => {
 //     return next(new ErrorHandler("Failed to fetch filter options", 500));
 //   }
 // });
+
+export const getProductStock = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { size } = req.query; // We'll still accept size from frontend
+
+    const product = await ProductModel.findById(id).select(
+      "name stock dressSizes shoesSizes"
+    );
+
+    if (!product) {
+      return res.status(404).json({
+        success: false,
+        message: "Product not found",
+      });
+    }
+
+    let availableStock = product.stock; // Default fallback
+
+    // Check dressSizes if size is provided
+    if (size && product.dressSizes && product.dressSizes.length > 0) {
+      const matchedSize = product.dressSizes.find((s) => s.size === size);
+      if (matchedSize) {
+        availableStock = matchedSize.stock;
+      }
+    }
+    // Check shoesSizes if size is provided
+    else if (size && product.shoesSizes && product.shoesSizes.length > 0) {
+      const matchedSize = product.shoesSizes.find((s) => s.size === size);
+      if (matchedSize) {
+        availableStock = matchedSize.stock;
+      }
+    }
+
+    res.json({
+      success: true,
+      stock: availableStock,
+      productId: id,
+      usedSizeStock: !!size && availableStock !== product.stock, // optional debug flag
+    });
+  } catch (error) {
+    console.error("Error fetching product stock:", error);
+    res.status(500).json({
+      success: false,
+      message: "Server error",
+    });
+  }
+};
