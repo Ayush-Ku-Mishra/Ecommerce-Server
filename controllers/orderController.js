@@ -5,6 +5,7 @@ import CartProductModel from "../models/cartProduct.model.js";
 import { createOrderNotification } from "./notificationController.js";
 import { createClientNotification } from "./clientNotificationController.js";
 import { sendOrderConfirmationEmail } from "../utils/sendOrderEmail.js";
+import ProductModel from "../models/productModel.js";
 
 // Create the actual create-order endpoint - ONLY creates Razorpay order, doesn't save to DB
 export const createRazorpayOrder = async (req, res) => {
@@ -543,6 +544,11 @@ export const updateOrderStatus = async (req, res) => {
       `Current order status: ${currentOrder.status}, Payment method: ${currentOrder.paymentMethod}`
     );
 
+    if (status === "delivered" && currentOrder.status !== "delivered") {
+      console.log("Order delivered - updating stock and sales");
+      await updateProductStockAndSales(currentOrder.products);
+    }
+
     // Business logic: Different progression for COD vs Online payments
     if (
       currentOrder.paymentMethod === "ONLINE" &&
@@ -709,5 +715,76 @@ export const updateOrderStatus = async (req, res) => {
       message: "Failed to update order status",
       error: error.message,
     });
+  }
+};
+
+const updateProductStockAndSales = async (products) => {
+  console.log("Starting stock and sales update for products:", products);
+
+  for (const orderItem of products) {
+    try {
+      console.log("Processing order item:", orderItem);
+
+      const productId = orderItem.productId.split("_")[0]; // Get base product ID
+
+      const product = await ProductModel.findById(productId);
+      if (!product) {
+        console.log(`Product not found: ${productId}`);
+        continue;
+      }
+
+      console.log("Before update:", {
+        productId,
+        mainStock: product.stock,
+        selectedSize: orderItem.selectedSize,
+        dressSizes: product.dressSizes,
+        shoesSizes: product.shoesSizes,
+        quantity: orderItem.quantity,
+      });
+
+      // Update main stock
+      product.stock = Math.max(0, product.stock - orderItem.quantity);
+
+      // Update size-specific stock if size is selected
+      if (orderItem.selectedSize) {
+        if (product.dressSizes?.length > 0) {
+          const sizeIndex = product.dressSizes.findIndex(
+            (s) => s.size === orderItem.selectedSize
+          );
+          if (sizeIndex !== -1) {
+            product.dressSizes[sizeIndex].stock = Math.max(
+              0,
+              product.dressSizes[sizeIndex].stock - orderItem.quantity
+            );
+          }
+        } else if (product.shoesSizes?.length > 0) {
+          const sizeIndex = product.shoesSizes.findIndex(
+            (s) => s.size === orderItem.selectedSize
+          );
+          if (sizeIndex !== -1) {
+            product.shoesSizes[sizeIndex].stock = Math.max(
+              0,
+              product.shoesSizes[sizeIndex].stock - orderItem.quantity
+            );
+          }
+        }
+      }
+
+      // Update sales count
+      product.sales = (product.sales || 0) + orderItem.quantity;
+
+      await product.save();
+
+      console.log("After update:", {
+        productId,
+        mainStock: product.stock,
+        selectedSize: orderItem.selectedSize,
+        dressSizes: product.dressSizes,
+        shoesSizes: product.shoesSizes,
+        sales: product.sales,
+      });
+    } catch (error) {
+      console.error(`Error updating product ${orderItem.productId}:`, error);
+    }
   }
 };
