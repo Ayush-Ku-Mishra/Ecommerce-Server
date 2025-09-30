@@ -4,6 +4,7 @@ import OrderModel from "../models/order.model.js";
 import CartProductModel from "../models/cartProduct.model.js";
 import { createOrderNotification } from "./notificationController.js";
 import { createClientNotification } from "./clientNotificationController.js";
+import { sendOrderConfirmationEmail } from "../utils/sendOrderEmail.js";
 
 // Create the actual create-order endpoint - ONLY creates Razorpay order, doesn't save to DB
 export const createRazorpayOrder = async (req, res) => {
@@ -197,6 +198,16 @@ export const verifyPayment = async (req, res) => {
       "Order saved to database successfully after payment verification"
     );
 
+    const userEmail = req.user.email;
+    try {
+      await sendOrderConfirmationEmail(userEmail, order);
+    } catch (emailError) {
+      console.warn(
+        "Email sending failed, but order was placed:",
+        emailError.message
+      );
+    }
+
     await createOrderNotification({
       orderId: order.orderId,
       customerName: order.delivery_address.name,
@@ -320,6 +331,18 @@ export const createCODOrder = async (req, res) => {
 
     await order.save();
     console.log("COD Order saved successfully");
+
+    const userEmail = req.user.email;
+
+    // Send Email
+    try {
+      await sendOrderConfirmationEmail(userEmail, order);
+    } catch (emailError) {
+      console.warn(
+        "Email sending failed, but order was placed:",
+        emailError.message
+      );
+    }
 
     await createOrderNotification({
       orderId: order.orderId,
