@@ -28,6 +28,7 @@ import {
   getSingleUser,
   updateUser,
   bulkUpdateUserStatus,
+  getMonthlySalesAndUsers,
 } from "../controllers/userController.js";
 import { isAuthenticated } from "../middlewares/auth.js";
 import { googleAuth } from "../controllers/authController.js";
@@ -82,5 +83,7 @@ router.get("/latest", isAuthenticated, getLatestUsers);
 router.get("/:id", isAuthenticated, getSingleUser);
 router.patch("/:id", isAuthenticated, updateUser);
 router.patch("/bulk-status-update", isAuthenticated, bulkUpdateUserStatus);
+
+router.get("/monthly-sales-users", isAuthenticated, getMonthlySalesAndUsers);
 
 export default router;
