@@ -6,7 +6,7 @@ import crypto from "crypto";
 const userSchema = new mongoose.Schema({
   role: {
     type: String,
-    enum: ["user", "admin", "seller", "moderator"],
+    enum: ["user", "admin"],
     default: "user",
   },
   name: {

@@ -5,6 +5,11 @@ import ReviewModel from "../models/reviewModel.js";
 import mongoose from "mongoose";
 import fs from "fs";
 
+const MAX_IMAGE_SIZE = 5 * 1024 * 1024; // 5MB
+const MAX_IMAGES = 5;
+const MAX_TITLE_LENGTH = 100;
+const MAX_TEXT_LENGTH = 1000;
+
 // Helper function to extract public ID from Cloudinary URL
 const getPublicIdFromUrl = (url) => {
   try {
@@ -42,8 +47,22 @@ export const uploadReviewImages = catchAsyncError(async (req, res, next) => {
       return next(new ErrorHandler("No images provided", 400));
     }
 
-    if (files.length > 5) {
-      return next(new ErrorHandler("Maximum 5 images allowed per review", 400));
+    if (files.length > MAX_IMAGES) {
+      return next(
+        new ErrorHandler(`Maximum ${MAX_IMAGES} images allowed per review`, 400)
+      );
+    }
+
+    // Validate file sizes
+    for (const file of files) {
+      if (file.size > MAX_IMAGE_SIZE) {
+        return next(
+          new ErrorHandler(
+            `Image ${file.originalname} exceeds 5MB size limit`,
+            400
+          )
+        );
+      }
     }
 
     const imagesArr = [];
@@ -52,6 +71,12 @@ export const uploadReviewImages = catchAsyncError(async (req, res, next) => {
       use_filename: true,
       unique_filename: true,
       overwrite: false,
+      resource_type: "image",
+      transformation: [
+        { width: 1200, height: 1200, crop: "limit" },
+        { quality: "auto" },
+        { fetch_format: "auto" },
+      ],
     };
 
     for (const file of files) {
@@ -87,6 +112,7 @@ export const createReview = catchAsyncError(async (req, res, next) => {
   try {
     const {
       productId,
+      orderId,
       rating,
       title,
       text,
@@ -95,48 +121,81 @@ export const createReview = catchAsyncError(async (req, res, next) => {
       isVerifiedPurchase = false,
     } = req.body;
 
-    // Validation
-    if (!productId || !rating || !text) {
+    // Validate productId
+    if (!mongoose.Types.ObjectId.isValid(productId)) {
+      return next(new ErrorHandler("Invalid product ID format", 400));
+    }
+
+    // Validate text length
+    if (!text || text.trim().length === 0) {
+      return next(new ErrorHandler("Review text is required", 400));
+    }
+
+    if (text.trim().length > MAX_TEXT_LENGTH) {
       return next(
         new ErrorHandler(
-          "Product ID, rating, and review text are required",
+          `Review text cannot exceed ${MAX_TEXT_LENGTH} characters`,
           400
         )
       );
     }
 
-    if (rating < 1 || rating > 5) {
-      return next(new ErrorHandler("Rating must be between 1 and 5", 400));
-    }
-
-    if (text.length > 2000) {
+    // Validate title length
+    if (title && title.trim().length > MAX_TITLE_LENGTH) {
       return next(
-        new ErrorHandler("Review text cannot exceed 2000 characters", 400)
+        new ErrorHandler(
+          `Review title cannot exceed ${MAX_TITLE_LENGTH} characters`,
+          400
+        )
       );
     }
 
-    if (images && images.length > 5) {
-      return next(new ErrorHandler("Maximum 5 images allowed", 400));
+    // Validate images
+    if (images.length > MAX_IMAGES) {
+      return next(
+        new ErrorHandler(`Maximum ${MAX_IMAGES} images allowed`, 400)
+      );
     }
 
-    // Check if user already reviewed this product
-    const existingReview = await ReviewModel.findOne({
-      userId: req.user._id,
-      productId: productId,
-    });
-
-    if (existingReview) {
-      return next(
-        new ErrorHandler("You have already reviewed this product", 400)
+    if (images.length > 0) {
+      const validImages = images.every(
+        (img) =>
+          img.url &&
+          typeof img.url === "string" &&
+          img.publicId &&
+          typeof img.publicId === "string"
       );
+
+      if (!validImages) {
+        return next(new ErrorHandler("Invalid image format", 400));
+      }
+    }
+
+    // Check if user already reviewed this product for this order
+    if (orderId) {
+      const existingReview = await ReviewModel.findOne({
+        productId,
+        userId: req.user._id,
+        orderId,
+      });
+
+      if (existingReview) {
+        return next(
+          new ErrorHandler(
+            "You have already reviewed this product for this order",
+            400
+          )
+        );
+      }
     }
 
     // Create review
     const review = await ReviewModel.create({
       productId,
+      orderId,
       userId: req.user._id,
       rating,
-      title: title?.trim(),
+      title: title?.trim() || "",
       text: text.trim(),
       images,
       isAnonymous,
@@ -152,7 +211,9 @@ export const createReview = catchAsyncError(async (req, res, next) => {
     });
   } catch (error) {
     console.error("Create review error:", error);
-    next(new ErrorHandler("Failed to create review", 500));
+    return next(
+      new ErrorHandler(error.message || "Failed to create review", 500)
+    );
   }
 });
 
@@ -168,9 +229,12 @@ export const getProductReviews = catchAsyncError(async (req, res, next) => {
       verified,
     } = req.query;
 
+    // Convert productId to ObjectId for MongoDB queries
+    const productObjectId = new mongoose.Types.ObjectId(productId);
+
     // Build filter
     const filter = {
-      productId,
+      productId: productObjectId, // ✅ Use ObjectId here
       isHidden: { $ne: true },
     };
 
@@ -218,23 +282,31 @@ export const getProductReviews = catchAsyncError(async (req, res, next) => {
       .lean();
 
     // Store original userIds before population
-    const reviewsWithOriginalIds = reviews.map(review => ({
+    const reviewsWithOriginalIds = reviews.map((review) => ({
       ...review,
-      originalUserId: review.userId // Preserve original ObjectId
+      originalUserId: review.userId, // Preserve original ObjectId
     }));
 
     // Populate user data separately
-    const populatedReviews = await ReviewModel.populate(reviewsWithOriginalIds, {
-      path: 'userId',
-      select: 'name email'
-    });
+    const populatedReviews = await ReviewModel.populate(
+      reviewsWithOriginalIds,
+      {
+        path: "userId",
+        select: "name email",
+      }
+    );
 
     // Get total count
     const totalReviews = await ReviewModel.countDocuments(filter);
 
-    // Get rating statistics
+    // Get rating statistics - ✅ FIXED: Use ObjectId in aggregation
     const ratingStatsAggregate = await ReviewModel.aggregate([
-      { $match: { productId, isHidden: { $ne: true } } },
+      {
+        $match: {
+          productId: productObjectId, // ✅ Use ObjectId here too
+          isHidden: { $ne: true },
+        },
+      },
       {
         $group: {
           _id: null,
@@ -341,35 +413,43 @@ export const updateReview = catchAsyncError(async (req, res, next) => {
       return next(new ErrorHandler("Review not found", 404));
     }
 
-    // Check if user owns the review
+    // Check ownership
     if (review.userId.toString() !== req.user._id.toString()) {
       return next(
         new ErrorHandler("You can only update your own reviews", 403)
       );
     }
 
-    // Check if review is older than 30 days (optional business rule)
-    const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
-    if (review.createdAt < thirtyDaysAgo) {
+    // Validate text length
+    if (text && text.trim().length > MAX_TEXT_LENGTH) {
       return next(
-        new ErrorHandler("Reviews older than 30 days cannot be updated", 400)
+        new ErrorHandler(
+          `Review text cannot exceed ${MAX_TEXT_LENGTH} characters`,
+          400
+        )
       );
     }
 
-    // Delete old images if new ones are provided
-    if (images.length > 0 && review.images.length > 0) {
-      for (const image of review.images) {
-        try {
-          await deleteFromCloudinary(image.url);
-        } catch (error) {
-          console.warn("Failed to delete old image:", error.message);
-        }
-      }
+    // Validate title length
+    if (title && title.trim().length > MAX_TITLE_LENGTH) {
+      return next(
+        new ErrorHandler(
+          `Review title cannot exceed ${MAX_TITLE_LENGTH} characters`,
+          400
+        )
+      );
     }
 
-    // Update review
+    // Validate images count
+    if (images.length > MAX_IMAGES) {
+      return next(
+        new ErrorHandler(`Maximum ${MAX_IMAGES} images allowed`, 400)
+      );
+    }
+
+    // Update fields
     if (rating) review.rating = rating;
-    if (title !== undefined) review.title = title?.trim();
+    if (title !== undefined) review.title = title?.trim() || "";
     if (text) review.text = text.trim();
     if (images.length >= 0) review.images = images;
     if (isAnonymous !== undefined) review.isAnonymous = isAnonymous;
@@ -844,20 +924,14 @@ export const removeReviewImage = catchAsyncError(async (req, res, next) => {
       return next(new ErrorHandler("Review not found", 404));
     }
 
-    console.log("=== BACKEND DEBUG ===");
-    console.log("Review userId:", review.userId);
-    console.log("Request user _id:", req.user._id);
-    console.log("Match:", review.userId.toString() === req.user._id.toString());
-    console.log("====================");
-
-    // Check if user owns the review
+    // Check ownership
     if (review.userId.toString() !== req.user._id.toString()) {
       return next(
         new ErrorHandler("You can only modify your own reviews", 403)
       );
     }
 
-    // Find and remove the image
+    // Find image
     const imageIndex = review.images.findIndex((img) => img.url === imageUrl);
     if (imageIndex === -1) {
       return next(new ErrorHandler("Image not found in review", 404));
@@ -867,9 +941,14 @@ export const removeReviewImage = catchAsyncError(async (req, res, next) => {
 
     // Delete from Cloudinary
     try {
-      await deleteFromCloudinary(imageToDelete.url);
+      const publicId =
+        imageToDelete.publicId || getPublicIdFromUrl(imageToDelete.url);
+      if (publicId) {
+        await cloudinary.uploader.destroy(publicId);
+      }
     } catch (error) {
       console.warn("Failed to delete image from Cloudinary:", error.message);
+      // Continue anyway to remove from database
     }
 
     // Remove from review
@@ -880,6 +959,7 @@ export const removeReviewImage = catchAsyncError(async (req, res, next) => {
       success: true,
       message: "Image removed successfully",
       remainingImages: review.images.length,
+      images: review.images,
     });
   } catch (error) {
     console.error("Remove review image error:", error);

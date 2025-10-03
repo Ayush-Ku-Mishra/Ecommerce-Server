@@ -3,9 +3,17 @@ import { catchAsyncError } from "../middlewares/catchAsyncError.js";
 import { v2 as cloudinary } from "cloudinary";
 import fs from "fs";
 import ProductModel from "../models/productModel.js";
+import mongoose from "mongoose";
 
 export const uploadImages = catchAsyncError(async (req, res, next) => {
   try {
+    // Check if user is admin
+    if (req.user.role !== "admin") {
+      return res.status(403).json({
+        success: false,
+        message: "Unauthorized access",
+      });
+    }
     const files = req.files;
     const imagesArr = [];
 
@@ -41,6 +49,13 @@ export const uploadImages = catchAsyncError(async (req, res, next) => {
 
 export const createProduct = catchAsyncError(async (req, res, next) => {
   try {
+    // Check if user is admin
+    if (req.user.role !== "admin") {
+      return res.status(403).json({
+        success: false,
+        message: "Unauthorized access",
+      });
+    }
     // Normalize images and color variants arrays
     const imagesArr = Array.isArray(req.body.images) ? req.body.images : [];
 
@@ -133,7 +148,7 @@ export const createProduct = catchAsyncError(async (req, res, next) => {
       subCatName: req.body.subCatName || "",
       thirdSubCatId: req.body.thirdSubCatId || "",
       thirdSubCatName: req.body.thirdSubCatName || "",
-      fourthSubCatId: req.body.fourthSubCatId || "", 
+      fourthSubCatId: req.body.fourthSubCatId || "",
       fourthSubCatName: req.body.fourthSubCatName || "",
       stock: req.body.stock,
       rating: req.body.rating || 0,
@@ -180,6 +195,13 @@ export const createProduct = catchAsyncError(async (req, res, next) => {
 //get All Products
 export const getAllProducts = catchAsyncError(async (req, res, next) => {
   try {
+    // Check if user is admin
+    if (req.user.role !== "admin") {
+      return res.status(403).json({
+        success: false,
+        message: "Unauthorized access",
+      });
+    }
     const page = parseInt(req.query.page) || 1;
     const perPage = parseInt(req.query.perPage) || 10;
     const { search, minPrice, maxPrice, brand, filter } = req.query;
@@ -285,6 +307,116 @@ export const getAllProducts = catchAsyncError(async (req, res, next) => {
     );
   }
 });
+
+export const getAllProductsForClient = catchAsyncError(
+  async (req, res, next) => {
+    try {
+      const page = parseInt(req.query.page) || 1;
+      const perPage = parseInt(req.query.perPage) || 10;
+      const { search, minPrice, maxPrice, brand, filter } = req.query;
+
+      // Build query
+      let query = {};
+
+      // Add search functionality with better parsing
+      if (search && search.trim() !== "") {
+        const searchLower = search.toLowerCase();
+
+        // Check if search contains "under" for price filtering
+        const underMatch = searchLower.match(/under\s+(\d+)/);
+        let searchTerm = search;
+
+        if (underMatch) {
+          // Extract the price and search term
+          const priceLimit = parseInt(underMatch[1]);
+          searchTerm = search.replace(/under\s+\d+/i, "").trim();
+
+          // Add price constraint
+          query.price = { $lte: priceLimit };
+        }
+
+        // Apply text search
+        if (searchTerm) {
+          query.$and = query.$and || [];
+          query.$and.push({
+            $or: [
+              { name: { $regex: searchTerm, $options: "i" } },
+              { brand: { $regex: searchTerm, $options: "i" } },
+              { categoryName: { $regex: searchTerm, $options: "i" } },
+              { subCatName: { $regex: searchTerm, $options: "i" } },
+              { thirdSubCatName: { $regex: searchTerm, $options: "i" } },
+              { fourthSubCatName: { $regex: searchTerm, $options: "i" } },
+              {
+                "productDetails.description": {
+                  $regex: searchTerm,
+                  $options: "i",
+                },
+              },
+            ],
+          });
+        }
+      }
+
+      // Add price filter from URL params
+      if (minPrice || maxPrice) {
+        query.price = query.price || {};
+        if (minPrice) query.price.$gte = parseInt(minPrice);
+        if (maxPrice) query.price.$lte = parseInt(maxPrice);
+      }
+
+      // Add brand filter
+      if (brand) {
+        const brands = Array.isArray(brand)
+          ? brand
+          : String(brand)
+              .split(",")
+              .map((b) => b.trim())
+              .filter(Boolean);
+
+        if (brands.length === 1) {
+          const escaped = brands[0].replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+          query.brand = { $regex: escaped, $options: "i" };
+        } else {
+          // match any of the provided brands (case-insensitive)
+          query.brand = {
+            $in: brands.map(
+              (b) => new RegExp(b.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i")
+            ),
+          };
+        }
+      }
+
+      console.log("Search query built:", JSON.stringify(query, null, 2));
+
+      const totalPosts = await ProductModel.countDocuments(query);
+      const totalPages = Math.ceil(totalPosts / perPage);
+
+      const products = await ProductModel.find(query)
+        .populate("category")
+        .sort({ updatedAt: -1 })
+        .skip((page - 1) * perPage)
+        .limit(perPage)
+        .lean()
+        .exec();
+
+      console.log(`Found ${products.length} products for search: "${search}"`);
+
+      res.status(200).json({
+        success: true,
+        count: products.length,
+        products: products,
+        totalPages: totalPages,
+        page: page,
+        timestamp: new Date().getTime(),
+      });
+    } catch (error) {
+      console.error("Get all products error:", error);
+      return next(
+        new ErrorHandler("Failed to fetch products. Please try again.", 500)
+      );
+    }
+  }
+);
 
 //get all products by category id
 export const getAllProductsByCatId = catchAsyncError(async (req, res, next) => {
@@ -983,6 +1115,13 @@ export const removeImageFromCloudinary = catchAsyncError(
 //Update Product
 export const updateProduct = catchAsyncError(async (req, res, next) => {
   try {
+    // Check if user is admin
+    if (req.user.role !== "admin") {
+      return res.status(403).json({
+        success: false,
+        message: "Unauthorized access",
+      });
+    }
     const productId = req.params.id;
 
     // Extract fields from the request body (adjust based on what you allow to update)
@@ -1464,6 +1603,205 @@ export const getProductStock = async (req, res) => {
     res.status(500).json({
       success: false,
       message: "Server error",
+    });
+  }
+};
+
+export const getAvailableSizes = async (req, res) => {
+  try {
+    console.log("Request body:", req.body);
+    const { productIds } = req.body;
+    console.log("Product IDs received:", productIds);
+
+    if (!productIds || !Array.isArray(productIds) || productIds.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: "Product IDs are required",
+      });
+    }
+
+    // Extract the base product IDs (before the first underscore)
+    const baseProductIds = productIds.map((id) => {
+      // If the ID contains an underscore, take the part before the first underscore
+      if (id.includes("_")) {
+        return id.split("_")[0];
+      }
+      return id;
+    });
+
+    console.log("Base product IDs:", baseProductIds);
+
+    // Filter out invalid MongoDB IDs
+    const validIds = baseProductIds.filter((id) => {
+      try {
+        return mongoose.Types.ObjectId.isValid(id);
+      } catch (e) {
+        console.log("Invalid ID:", id);
+        return false;
+      }
+    });
+
+    console.log("Valid MongoDB IDs:", validIds);
+
+    if (validIds.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: "No valid product IDs provided",
+      });
+    }
+
+    // Get all products in one query
+    const products = await ProductModel.find({
+      _id: { $in: validIds },
+    }).select("_id name dressSizes shoesSizes freeSize colorVariants");
+
+    console.log("Found products:", products.length);
+
+    // Create a map of product ID to available sizes
+    const availableSizesMap = {};
+
+    products.forEach((product) => {
+      // Use the original product ID as the key
+      const originalProductId = productIds.find((id) =>
+        id.startsWith(product._id.toString())
+      );
+      const productId = originalProductId || product._id.toString();
+
+      // Extract variant info from the original product ID
+      let currentVariant = null;
+      if (originalProductId && originalProductId.includes("_")) {
+        const parts = originalProductId.split("_");
+        if (parts.length >= 2) {
+          currentVariant = parts[1]; // Get the variant name (e.g., "default")
+        }
+      }
+
+      let availableSizes = [];
+
+      // Only include main product sizes if we're not looking at a specific variant
+      // or if the variant is "default" (which often means the main product)
+      if (!currentVariant || currentVariant === "default") {
+        // Check dress sizes
+        if (product.dressSizes && product.dressSizes.length > 0) {
+          const inStockDressSizes = product.dressSizes
+            .filter((size) => size.stock > 0)
+            .map((size) => ({
+              size: size.size,
+              stock: size.stock,
+              type: "dress",
+            }));
+          availableSizes = [...availableSizes, ...inStockDressSizes];
+        }
+
+        // Check shoe sizes
+        if (product.shoesSizes && product.shoesSizes.length > 0) {
+          const inStockShoeSizes = product.shoesSizes
+            .filter((size) => size.stock > 0)
+            .map((size) => ({
+              size: size.size,
+              stock: size.stock,
+              type: "shoes",
+            }));
+          availableSizes = [...availableSizes, ...inStockShoeSizes];
+        }
+
+        // Check free size
+        if (product.freeSize === "yes") {
+          availableSizes.push({
+            size: "Free Size",
+            stock: product.stock || 0,
+            type: "free",
+          });
+        }
+      }
+
+      // Only include variant sizes if we're looking at a specific variant
+      // or if we want to include all variants
+      if (product.colorVariants && product.colorVariants.length > 0) {
+        product.colorVariants.forEach((variant) => {
+          // Skip this variant if we're looking for a specific one and this isn't it
+          if (currentVariant && variant.colorName !== currentVariant) {
+            return;
+          }
+
+          // Skip the default variant if we've already included the main product sizes
+          if (
+            variant.colorName === "default" &&
+            (!currentVariant || currentVariant === "default")
+          ) {
+            return;
+          }
+
+          // Check dress sizes in variants
+          if (variant.dressSizes && variant.dressSizes.length > 0) {
+            const inStockVariantDressSizes = variant.dressSizes
+              .filter((size) => size.stock > 0)
+              .map((size) => ({
+                size: size.size,
+                stock: size.stock,
+                type: "dress",
+                variantColor: variant.colorName,
+              }));
+            availableSizes = [...availableSizes, ...inStockVariantDressSizes];
+          }
+
+          // Check shoe sizes in variants
+          if (variant.shoesSizes && variant.shoesSizes.length > 0) {
+            const inStockVariantShoeSizes = variant.shoesSizes
+              .filter((size) => size.stock > 0)
+              .map((size) => ({
+                size: size.size,
+                stock: size.stock,
+                type: "shoes",
+                variantColor: variant.colorName,
+              }));
+            availableSizes = [...availableSizes, ...inStockVariantShoeSizes];
+          }
+
+          // Check free size in variants
+          if (variant.freeSize === "yes") {
+            availableSizes.push({
+              size: "Free Size",
+              stock: variant.stock || 0,
+              type: "free",
+              variantColor: variant.colorName,
+            });
+          }
+        });
+      }
+
+      // Deduplicate sizes by size value
+      const uniqueSizes = {};
+      availableSizes.forEach((sizeObj) => {
+        const key = sizeObj.size;
+        // If this size doesn't exist yet or has higher stock, use it
+        if (!uniqueSizes[key] || uniqueSizes[key].stock < sizeObj.stock) {
+          uniqueSizes[key] = sizeObj;
+        }
+      });
+
+      // Convert back to array and sort
+      availableSizesMap[productId] = Object.values(uniqueSizes).sort((a, b) => {
+        // Sort numeric sizes numerically
+        if (!isNaN(a.size) && !isNaN(b.size)) {
+          return Number(a.size) - Number(b.size);
+        }
+        // Sort alphabetically for non-numeric sizes
+        return a.size.localeCompare(b.size);
+      });
+    });
+
+    res.status(200).json({
+      success: true,
+      data: availableSizesMap,
+    });
+  } catch (error) {
+    console.error("Error in getAvailableSizes:", error);
+    res.status(500).json({
+      success: false,
+      message: "Server error",
+      error: error.message,
+      stack: error.stack,
     });
   }
 };

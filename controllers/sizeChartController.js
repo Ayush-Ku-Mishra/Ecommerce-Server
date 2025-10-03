@@ -6,12 +6,19 @@ import fs from "fs";
 
 export const uploadImages = catchAsyncError(async (req, res, next) => {
   try {
+    // Check if user is admin
+    if (req.user.role !== "admin") {
+      return res.status(403).json({
+        success: false,
+        message: "Unauthorized access",
+      });
+    }
     const files = req.files;
-    
+
     if (!files || files.length === 0) {
       return res.status(400).json({
         success: false,
-        message: "No files uploaded."
+        message: "No files uploaded.",
       });
     }
 
@@ -91,6 +98,13 @@ export const removeImageFromCloudinary = catchAsyncError(
 // Create Size Chart
 export const createSizeChart = catchAsyncError(async (req, res, next) => {
   try {
+    // Check if user is admin
+    if (req.user.role !== "admin") {
+      return res.status(403).json({
+        success: false,
+        message: "Unauthorized access",
+      });
+    }
     const {
       name,
       unit,
@@ -107,7 +121,11 @@ export const createSizeChart = catchAsyncError(async (req, res, next) => {
     // Parse sizes if sent as string
     const parsedSizes = typeof sizes === "string" ? JSON.parse(sizes) : sizes;
 
-    if (!parsedSizes || !Array.isArray(parsedSizes) || parsedSizes.length === 0) {
+    if (
+      !parsedSizes ||
+      !Array.isArray(parsedSizes) ||
+      parsedSizes.length === 0
+    ) {
       return next(new ErrorHandler("At least one size is required", 400));
     }
 
@@ -128,14 +146,14 @@ export const createSizeChart = catchAsyncError(async (req, res, next) => {
 
     const savedChart = await newChart.save();
 
-    res.status(201).json({ 
+    res.status(201).json({
       success: true,
-      message: "Size chart created successfully", 
-      sizeChart: savedChart 
+      message: "Size chart created successfully",
+      sizeChart: savedChart,
     });
   } catch (error) {
     console.error("Create size chart error:", error);
-    if (error.name === 'ValidationError') {
+    if (error.name === "ValidationError") {
       return next(new ErrorHandler(error.message, 400));
     }
     next(new ErrorHandler("Failed to create size chart", 500));
@@ -146,17 +164,18 @@ export const createSizeChart = catchAsyncError(async (req, res, next) => {
 export const getSizeCharts = catchAsyncError(async (req, res, next) => {
   try {
     const charts = await SizeChartModel.find().sort({ createdAt: -1 });
-    
+
     // Format the response to match frontend expectations
-    const formattedCharts = charts.map(chart => ({
+    const formattedCharts = charts.map((chart) => ({
       ...chart.toObject(),
       createdAt: new Date(chart.createdAt).toLocaleDateString(),
       updatedAt: new Date(chart.updatedAt).toLocaleDateString(),
-      howToMeasureImages: chart.howToMeasureImageUrls?.map((url, idx) => ({
-        id: idx + Date.now(),
-        url: url,
-        name: `Image ${idx + 1}`,
-      })) || []
+      howToMeasureImages:
+        chart.howToMeasureImageUrls?.map((url, idx) => ({
+          id: idx + Date.now(),
+          url: url,
+          name: `Image ${idx + 1}`,
+        })) || [],
     }));
 
     res.status(200).json(formattedCharts);
@@ -170,7 +189,7 @@ export const getSizeCharts = catchAsyncError(async (req, res, next) => {
 export const getSizeChartById = catchAsyncError(async (req, res, next) => {
   try {
     const chart = await SizeChartModel.findById(req.params.id);
-    
+
     if (!chart) {
       return next(new ErrorHandler("Size chart not found", 404));
     }
@@ -180,17 +199,18 @@ export const getSizeChartById = catchAsyncError(async (req, res, next) => {
       ...chart.toObject(),
       createdAt: new Date(chart.createdAt).toLocaleDateString(),
       updatedAt: new Date(chart.updatedAt).toLocaleDateString(),
-      howToMeasureImages: chart.howToMeasureImageUrls?.map((url, idx) => ({
-        id: idx + Date.now(),
-        url: url,
-        name: `Image ${idx + 1}`,
-      })) || []
+      howToMeasureImages:
+        chart.howToMeasureImageUrls?.map((url, idx) => ({
+          id: idx + Date.now(),
+          url: url,
+          name: `Image ${idx + 1}`,
+        })) || [],
     };
 
     res.status(200).json(formattedChart);
   } catch (error) {
     console.error("Get size chart by ID error:", error);
-    if (error.name === 'CastError') {
+    if (error.name === "CastError") {
       return next(new ErrorHandler("Invalid size chart ID", 400));
     }
     next(new ErrorHandler("Failed to fetch size chart", 500));
@@ -200,8 +220,15 @@ export const getSizeChartById = catchAsyncError(async (req, res, next) => {
 // Update size chart by ID
 export const updateSizeChart = catchAsyncError(async (req, res, next) => {
   try {
+    // Check if user is admin
+    if (req.user.role !== "admin") {
+      return res.status(403).json({
+        success: false,
+        message: "Unauthorized access",
+      });
+    }
     const { id } = req.params;
-    
+
     // Validate MongoDB ObjectId format
     if (!id || !id.match(/^[0-9a-fA-F]{24}$/)) {
       return next(new ErrorHandler("Invalid size chart ID format", 400));
@@ -211,7 +238,7 @@ export const updateSizeChart = catchAsyncError(async (req, res, next) => {
     console.log("Request body:", req.body); // Debug log
 
     const chart = await SizeChartModel.findById(id);
-    
+
     if (!chart) {
       return next(new ErrorHandler("Size chart not found", 404));
     }
@@ -232,7 +259,7 @@ export const updateSizeChart = catchAsyncError(async (req, res, next) => {
     // Parse and validate sizes if provided
     if (sizes !== undefined) {
       const parsedSizes = typeof sizes === "string" ? JSON.parse(sizes) : sizes;
-      
+
       if (!Array.isArray(parsedSizes) || parsedSizes.length === 0) {
         return next(new ErrorHandler("At least one size is required", 400));
       }
@@ -243,15 +270,17 @@ export const updateSizeChart = catchAsyncError(async (req, res, next) => {
           return next(new ErrorHandler("All sizes must have a label", 400));
         }
       }
-      
+
       chart.sizes = parsedSizes;
     }
 
     // Update other fields
     if (name !== undefined) chart.name = name.trim();
     if (unit !== undefined) chart.unit = unit;
-    if (howToMeasureDescription !== undefined) chart.howToMeasureDescription = howToMeasureDescription;
-    if (howToMeasureImageUrls !== undefined) chart.howToMeasureImageUrls = howToMeasureImageUrls;
+    if (howToMeasureDescription !== undefined)
+      chart.howToMeasureDescription = howToMeasureDescription;
+    if (howToMeasureImageUrls !== undefined)
+      chart.howToMeasureImageUrls = howToMeasureImageUrls;
 
     const updatedChart = await chart.save();
 
@@ -260,24 +289,25 @@ export const updateSizeChart = catchAsyncError(async (req, res, next) => {
       ...updatedChart.toObject(),
       createdAt: new Date(updatedChart.createdAt).toLocaleDateString(),
       updatedAt: new Date(updatedChart.updatedAt).toLocaleDateString(),
-      howToMeasureImages: updatedChart.howToMeasureImageUrls?.map((url, idx) => ({
-        id: idx + Date.now(),
-        url: url,
-        name: `Image ${idx + 1}`,
-      })) || []
+      howToMeasureImages:
+        updatedChart.howToMeasureImageUrls?.map((url, idx) => ({
+          id: idx + Date.now(),
+          url: url,
+          name: `Image ${idx + 1}`,
+        })) || [],
     };
 
-    res.status(200).json({ 
+    res.status(200).json({
       success: true,
-      message: "Size chart updated successfully", 
-      sizeChart: formattedChart 
+      message: "Size chart updated successfully",
+      sizeChart: formattedChart,
     });
   } catch (error) {
     console.error("Update size chart error:", error);
-    if (error.name === 'ValidationError') {
+    if (error.name === "ValidationError") {
       return next(new ErrorHandler(error.message, 400));
     }
-    if (error.name === 'CastError') {
+    if (error.name === "CastError") {
       return next(new ErrorHandler("Invalid size chart ID", 400));
     }
     next(new ErrorHandler("Failed to update size chart", 500));
@@ -287,8 +317,15 @@ export const updateSizeChart = catchAsyncError(async (req, res, next) => {
 // Delete size chart by ID
 export const deleteSizeChart = catchAsyncError(async (req, res, next) => {
   try {
+    // Check if user is admin
+    if (req.user.role !== "admin") {
+      return res.status(403).json({
+        success: false,
+        message: "Unauthorized access",
+      });
+    }
     const chart = await SizeChartModel.findById(req.params.id);
-    
+
     if (!chart) {
       return next(new ErrorHandler("Size chart not found", 404));
     }
@@ -300,12 +337,15 @@ export const deleteSizeChart = catchAsyncError(async (req, res, next) => {
           const urlArr = imageUrl.split("/");
           const image = urlArr[urlArr.length - 1];
           const imageName = image.split(".")[0];
-          
+
           if (imageName) {
             await cloudinary.uploader.destroy(imageName);
           }
         } catch (imgError) {
-          console.warn("Failed to delete image from Cloudinary:", imgError.message);
+          console.warn(
+            "Failed to delete image from Cloudinary:",
+            imgError.message
+          );
           // Continue with deletion even if image cleanup fails
         }
       }
@@ -314,13 +354,13 @@ export const deleteSizeChart = catchAsyncError(async (req, res, next) => {
     // Use findByIdAndDelete instead of deprecated remove()
     await SizeChartModel.findByIdAndDelete(req.params.id);
 
-    res.status(200).json({ 
+    res.status(200).json({
       success: true,
-      message: "Size chart deleted successfully" 
+      message: "Size chart deleted successfully",
     });
   } catch (error) {
     console.error("Delete size chart error:", error);
-    if (error.name === 'CastError') {
+    if (error.name === "CastError") {
       return next(new ErrorHandler("Invalid size chart ID", 400));
     }
     next(new ErrorHandler("Failed to delete size chart", 500));
@@ -331,9 +371,9 @@ export const getSizeChartByUnit = catchAsyncError(async (req, res, next) => {
   try {
     const { id } = req.params;
     const { unit } = req.query; // inch or cm
-    
+
     const chart = await SizeChartModel.findById(id);
-    
+
     if (!chart) {
       return next(new ErrorHandler("Size chart not found", 404));
     }
@@ -354,10 +394,23 @@ export const getSizeChartByUnit = catchAsyncError(async (req, res, next) => {
       if (!sizes || !Array.isArray(sizes)) return [];
       return sizes.map((size) => {
         const convertedSize = { ...size };
-        const fields = ["shoulder", "length", "chest", "waist", "hip", "sleeve", "neck", "thigh"];
+        const fields = [
+          "shoulder",
+          "length",
+          "chest",
+          "waist",
+          "hip",
+          "sleeve",
+          "neck",
+          "thigh",
+        ];
         fields.forEach((field) => {
           if (convertedSize[field]) {
-            convertedSize[field] = convertUnit(convertedSize[field], fromUnit, toUnit);
+            convertedSize[field] = convertUnit(
+              convertedSize[field],
+              fromUnit,
+              toUnit
+            );
           }
         });
         return convertedSize;
@@ -366,9 +419,10 @@ export const getSizeChartByUnit = catchAsyncError(async (req, res, next) => {
 
     // Get sizes in requested unit
     const requestedUnit = unit || chart.unit;
-    const sizes = requestedUnit === chart.unit 
-      ? chart.sizes 
-      : getConvertedSizes(chart.sizes, chart.unit, requestedUnit);
+    const sizes =
+      requestedUnit === chart.unit
+        ? chart.sizes
+        : getConvertedSizes(chart.sizes, chart.unit, requestedUnit);
 
     const formattedChart = {
       ...chart.toObject(),
@@ -376,17 +430,18 @@ export const getSizeChartByUnit = catchAsyncError(async (req, res, next) => {
       displayUnit: requestedUnit,
       createdAt: new Date(chart.createdAt).toLocaleDateString(),
       updatedAt: new Date(chart.updatedAt).toLocaleDateString(),
-      howToMeasureImages: chart.howToMeasureImageUrls?.map((url, idx) => ({
-        id: idx + Date.now(),
-        url: url,
-        name: `Image ${idx + 1}`,
-      })) || []
+      howToMeasureImages:
+        chart.howToMeasureImageUrls?.map((url, idx) => ({
+          id: idx + Date.now(),
+          url: url,
+          name: `Image ${idx + 1}`,
+        })) || [],
     };
 
     res.status(200).json(formattedChart);
   } catch (error) {
     console.error("Get size chart by unit error:", error);
-    if (error.name === 'CastError') {
+    if (error.name === "CastError") {
       return next(new ErrorHandler("Invalid size chart ID", 400));
     }
     next(new ErrorHandler("Failed to fetch size chart", 500));
@@ -394,59 +449,76 @@ export const getSizeChartByUnit = catchAsyncError(async (req, res, next) => {
 });
 
 // Add this endpoint to get all charts with unit conversion
-export const getAllSizeChartsWithUnit = catchAsyncError(async (req, res, next) => {
-  try {
-    const { unit } = req.query; // inch or cm
-    const charts = await SizeChartModel.find().sort({ createdAt: -1 });
-    
-    const convertUnit = (value, fromUnit, toUnit) => {
-      if (!value || isNaN(value)) return value;
-      const numValue = parseFloat(value);
-      if (fromUnit === "inch" && toUnit === "cm") {
-        return (numValue * 2.54).toFixed(1);
-      } else if (fromUnit === "cm" && toUnit === "inch") {
-        return (numValue / 2.54).toFixed(1);
-      }
-      return value;
-    };
+export const getAllSizeChartsWithUnit = catchAsyncError(
+  async (req, res, next) => {
+    try {
+      const { unit } = req.query; // inch or cm
+      const charts = await SizeChartModel.find().sort({ createdAt: -1 });
 
-    const getConvertedSizes = (sizes, fromUnit, toUnit) => {
-      if (!sizes || !Array.isArray(sizes)) return [];
-      return sizes.map((size) => {
-        const convertedSize = { ...size };
-        const fields = ["shoulder", "length", "chest", "waist", "hip", "sleeve", "neck", "thigh"];
-        fields.forEach((field) => {
-          if (convertedSize[field]) {
-            convertedSize[field] = convertUnit(convertedSize[field], fromUnit, toUnit);
-          }
-        });
-        return convertedSize;
-      });
-    };
-
-    const formattedCharts = charts.map(chart => {
-      const requestedUnit = unit || chart.unit;
-      const sizes = requestedUnit === chart.unit 
-        ? chart.sizes 
-        : getConvertedSizes(chart.sizes, chart.unit, requestedUnit);
-
-      return {
-        ...chart.toObject(),
-        sizes: sizes,
-        displayUnit: requestedUnit,
-        createdAt: new Date(chart.createdAt).toLocaleDateString(),
-        updatedAt: new Date(chart.updatedAt).toLocaleDateString(),
-        howToMeasureImages: chart.howToMeasureImageUrls?.map((url, idx) => ({
-          id: idx + Date.now(),
-          url: url,
-          name: `Image ${idx + 1}`,
-        })) || []
+      const convertUnit = (value, fromUnit, toUnit) => {
+        if (!value || isNaN(value)) return value;
+        const numValue = parseFloat(value);
+        if (fromUnit === "inch" && toUnit === "cm") {
+          return (numValue * 2.54).toFixed(1);
+        } else if (fromUnit === "cm" && toUnit === "inch") {
+          return (numValue / 2.54).toFixed(1);
+        }
+        return value;
       };
-    });
 
-    res.status(200).json(formattedCharts);
-  } catch (error) {
-    console.error("Get size charts with unit error:", error);
-    next(new ErrorHandler("Failed to fetch size charts", 500));
+      const getConvertedSizes = (sizes, fromUnit, toUnit) => {
+        if (!sizes || !Array.isArray(sizes)) return [];
+        return sizes.map((size) => {
+          const convertedSize = { ...size };
+          const fields = [
+            "shoulder",
+            "length",
+            "chest",
+            "waist",
+            "hip",
+            "sleeve",
+            "neck",
+            "thigh",
+          ];
+          fields.forEach((field) => {
+            if (convertedSize[field]) {
+              convertedSize[field] = convertUnit(
+                convertedSize[field],
+                fromUnit,
+                toUnit
+              );
+            }
+          });
+          return convertedSize;
+        });
+      };
+
+      const formattedCharts = charts.map((chart) => {
+        const requestedUnit = unit || chart.unit;
+        const sizes =
+          requestedUnit === chart.unit
+            ? chart.sizes
+            : getConvertedSizes(chart.sizes, chart.unit, requestedUnit);
+
+        return {
+          ...chart.toObject(),
+          sizes: sizes,
+          displayUnit: requestedUnit,
+          createdAt: new Date(chart.createdAt).toLocaleDateString(),
+          updatedAt: new Date(chart.updatedAt).toLocaleDateString(),
+          howToMeasureImages:
+            chart.howToMeasureImageUrls?.map((url, idx) => ({
+              id: idx + Date.now(),
+              url: url,
+              name: `Image ${idx + 1}`,
+            })) || [],
+        };
+      });
+
+      res.status(200).json(formattedCharts);
+    } catch (error) {
+      console.error("Get size charts with unit error:", error);
+      next(new ErrorHandler("Failed to fetch size charts", 500));
+    }
   }
-});
+);

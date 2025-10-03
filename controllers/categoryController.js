@@ -7,6 +7,13 @@ import fs from "fs";
 // Upload Images only - existing function kept as is, placed first
 export const uploadImages = catchAsyncError(async (req, res, next) => {
   try {
+    // Check if user is admin
+    if (req.user.role !== "admin") {
+      return res.status(403).json({
+        success: false,
+        message: "Unauthorized access",
+      });
+    }
     const files = req.files;
     const imagesArr = [];
 
@@ -21,9 +28,9 @@ export const uploadImages = catchAsyncError(async (req, res, next) => {
           height: 96,
           crop: "fill",
           format: "auto",
-          quality: "auto"
-        }
-      ]
+          quality: "auto",
+        },
+      ],
     };
 
     for (const file of files) {
@@ -53,6 +60,13 @@ export const uploadImages = catchAsyncError(async (req, res, next) => {
 // Create Category - requires name and optionally images array in request body
 export const createCategory = catchAsyncError(async (req, res, next) => {
   try {
+    // Check if user is admin
+    if (req.user.role !== "admin") {
+      return res.status(403).json({
+        success: false,
+        message: "Unauthorized access",
+      });
+    }
     let category = new CategoryModel({
       name: req.body.name,
       images: req.body.images || [],
@@ -85,6 +99,51 @@ export const createCategory = catchAsyncError(async (req, res, next) => {
 // Get categories - unchanged
 export const getCategories = catchAsyncError(async (req, res, next) => {
   try {
+    const categories = await CategoryModel.find();
+    const categoryMap = {};
+
+    categories.forEach((category) => {
+      categoryMap[category._id.toString()] = {
+        ...category._doc,
+        children: [],
+      };
+    });
+
+    const rootCategories = [];
+
+    categories.forEach((category) => {
+      if (category.parentId && categoryMap[category.parentId.toString()]) {
+        categoryMap[category.parentId.toString()].children.push(
+          categoryMap[category._id.toString()]
+        );
+      } else {
+        rootCategories.push(categoryMap[category._id.toString()]);
+      }
+    });
+
+    return res.status(200).json({
+      error: false,
+      data: rootCategories,
+      success: true,
+      message: "Categories fetched successfully.",
+    });
+  } catch (error) {
+    console.error("Get categories error:", error);
+    return next(
+      new ErrorHandler("Failed to fetch categories. Please try again.", 500)
+    );
+  }
+});
+
+export const getCategoriesForAdmin = catchAsyncError(async (req, res, next) => {
+  try {
+    // Check if user is admin
+    if (req.user.role !== "admin") {
+      return res.status(403).json({
+        success: false,
+        message: "Unauthorized access",
+      });
+    }
     const categories = await CategoryModel.find();
     const categoryMap = {};
 

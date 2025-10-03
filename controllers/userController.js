@@ -89,6 +89,22 @@ export const register = catchAsyncError(async (req, res, next) => {
       );
     }
 
+    const suspendedAccount = await User.findOne({
+      $or: [
+        { email, status: "suspended" },
+        { phone, status: "suspended" },
+      ],
+    });
+
+    if (suspendedAccount) {
+      return next(
+        new ErrorHandler(
+          "This account has been suspended. Please contact customer support for assistance.",
+          403
+        )
+      );
+    }
+
     // Check for existing VERIFIED users first
     const existingVerifiedUser = await User.findOne({
       $or: [
@@ -397,6 +413,16 @@ export const authWithGoogle = catchAsyncError(async (req, res, next) => {
     let existingUser = await User.findOne({ email });
 
     if (existingUser) {
+      // Check if the account is suspended - ADDED THIS CHECK
+      if (existingUser.status === "suspended") {
+        return next(
+          new ErrorHandler(
+            "Your account has been suspended. Please contact support for assistance.",
+            403
+          )
+        );
+      }
+
       if (existingUser.accountVerified) {
         // For admin login, upgrade user to admin if they're in whitelist
         if (isAdminLogin && allowedAdminEmails.includes(email)) {
@@ -510,10 +536,7 @@ export const googleLogin = catchAsyncError(async (req, res, next) => {
       return next(new ErrorHandler("Email is required.", 400));
     }
 
-    const allowedAdminEmails = [
-      "amishra59137@gmail.com",
-      "dasrasmi781@gmail.com",
-    ];
+    const allowedAdminEmails = ["amishra59137@gmail.com"];
 
     // Check admin access
     if (isAdminLogin && !allowedAdminEmails.includes(email)) {
@@ -550,10 +573,11 @@ export const googleLogin = catchAsyncError(async (req, res, next) => {
       );
     }
 
+    // Check for suspended account - IMPROVED MESSAGE
     if (user.status === "suspended") {
       return next(
         new ErrorHandler(
-          "Account suspended. Contact Pickora team for assistance.",
+          "Your account has been suspended. Please contact support for assistance.",
           403
         )
       );
@@ -768,37 +792,50 @@ export const verifyOTP = catchAsyncError(async (req, res, next) => {
 export const clientLogin = catchAsyncError(async (req, res, next) => {
   const { email, password } = req.body;
 
+  // Validate input
   if (!email || !password) {
     return next(new ErrorHandler("Email and password are required.", 400));
   }
 
+  // Find user with verified account
   const user = await User.findOne({ email, accountVerified: true }).select(
     "+password"
   );
 
-  if (!user) return next(new ErrorHandler("User not registered.", 400));
-  if (user.status === "suspended") {
-    return next(new ErrorHandler("Account suspended. Contact support.", 400));
+  // Handle missing user
+  if (!user) {
+    return next(new ErrorHandler("Invalid email or password.", 401)); // Using 401 for security (don't reveal if email exists)
   }
 
+  // Check account status
+  if (user.status === "suspended") {
+    return next(
+      new ErrorHandler(
+        "Your account has been suspended. Please contact support for assistance.",
+        403
+      )
+    ); // Using 403 Forbidden for suspended accounts
+  }
+
+  // Validate password
   const isPasswordMatched = await user.comparePassword(password);
   if (!isPasswordMatched) {
-    return next(new ErrorHandler("Invalid email or password.", 400));
+    return next(new ErrorHandler("Invalid email or password.", 401)); // Using 401 for authentication failure
   }
 
+  // Update user status and login timestamp
   user.status = "active";
   user.last_login_date = new Date();
   await user.save({ validateModifiedOnly: true });
 
+  // Generate and send token
   sendToken(user, 200, "Login successful", res);
 });
 
 export const adminLogin = catchAsyncError(async (req, res, next) => {
   const { email, password } = req.body;
 
-  const allowedAdminEmails = [
-    "amishra59137@gmail.com",
-  ]; // Your whitelist
+  const allowedAdminEmails = ["amishra59137@gmail.com"]; // Your whitelist
 
   if (!email || !password) {
     return next(new ErrorHandler("Email and password are required.", 400));
@@ -888,6 +925,16 @@ export const forgotPassword = catchAsyncError(async (req, res, next) => {
 
     if (!user) {
       return next(new ErrorHandler("User not found or not verified", 404));
+    }
+
+    if (user.status === "suspended") {
+      console.log("User account is suspended:", user.email);
+      return next(
+        new ErrorHandler(
+          "This account has been suspended. Please contact customer support for assistance.",
+          403
+        )
+      );
     }
 
     console.log("3. User found, generating OTP");
@@ -1409,6 +1456,13 @@ export const getUsersCount = catchAsyncError(async (req, res, next) => {
 // Get all users (with pagination and search)
 export const getAllUsers = catchAsyncError(async (req, res, next) => {
   try {
+    // Check if user is admin
+    if (req.user.role !== "admin") {
+      return res.status(403).json({
+        success: false,
+        message: "Unauthorized access",
+      });
+    }
     const { page = 1, limit = 50, search = "" } = req.query;
 
     // Build search query
@@ -1435,12 +1489,24 @@ export const getAllUsers = catchAsyncError(async (req, res, next) => {
 
     const totalUsers = await User.countDocuments(query);
 
+    // Calculate statistics
+    const stats = {
+      total: await User.countDocuments(),
+      active: await User.countDocuments({ status: "active" }),
+      inactive: await User.countDocuments({ status: "inactive" }),
+      suspended: await User.countDocuments({ status: "suspended" }),
+      verified: await User.countDocuments({ accountVerified: true }),
+      googleUsers: await User.countDocuments({ signUpWithGoogle: true }),
+      adminUsers: await User.countDocuments({ role: "admin" }),
+    };
+
     res.status(200).json({
       success: true,
       users,
       totalUsers,
       currentPage: parseInt(page),
       totalPages: Math.ceil(totalUsers / parseInt(limit)),
+      stats, // Add this to your response
     });
   } catch (error) {
     console.error("Get all users error:", error);
@@ -1562,26 +1628,253 @@ export const getUsersByMonth = async (req, res) => {
   }
 };
 
+export const verifyForgotPasswordOTP = catchAsyncError(
+  async (req, res, next) => {
+    const { email, otp } = req.body;
 
-export const verifyForgotPasswordOTP = catchAsyncError(async (req, res, next) => {
-  const { email, otp } = req.body;
+    if (!email || !otp) {
+      return next(new ErrorHandler("Email and OTP are required", 400));
+    }
 
-  if (!email || !otp) {
-    return next(new ErrorHandler("Email and OTP are required", 400));
+    const user = await User.findOne({
+      email,
+      verificationCode: Number(otp),
+      verificationCodeExpire: { $gt: Date.now() },
+    });
+
+    if (!user) {
+      return next(new ErrorHandler("Invalid or expired OTP", 400));
+    }
+
+    res.status(200).json({
+      success: true,
+      message: "OTP verified successfully",
+    });
   }
+);
 
-  const user = await User.findOne({
-    email,
-    verificationCode: Number(otp),
-    verificationCodeExpire: { $gt: Date.now() }
-  });
+export const getSingleUser = catchAsyncError(async (req, res, next) => {
+  try {
+    const { id } = req.params;
 
-  if (!user) {
-    return next(new ErrorHandler("Invalid or expired OTP", 400));
+    // Check if user is admin
+    if (req.user.role !== "admin") {
+      return res.status(403).json({
+        success: false,
+        message: "Unauthorized access",
+      });
+    }
+
+    const user = await User.findById(id)
+      .select(
+        "-password -verificationCode -resetPasswordToken -resetPasswordExpire"
+      )
+      .populate("address_details")
+      .populate("shopping_cart")
+      .populate("order_history");
+
+    if (!user) {
+      return next(new ErrorHandler("User not found", 404));
+    }
+
+    res.status(200).json({
+      success: true,
+      user,
+    });
+  } catch (error) {
+    console.error("Get single user error:", error);
+    next(new ErrorHandler("Failed to fetch user details", 500));
   }
+});
 
-  res.status(200).json({
-    success: true,
-    message: "OTP verified successfully"
-  });
+// Update user details (admin)
+export const updateUser = catchAsyncError(async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const { name, email, phone, role, status, accountVerified } = req.body;
+
+    // Check if user is admin
+    if (req.user.role !== "admin") {
+      return res.status(403).json({
+        success: false,
+        message: "Unauthorized access",
+      });
+    }
+
+    // Check if user exists
+    const user = await User.findById(id);
+    if (!user) {
+      return next(new ErrorHandler("User not found", 404));
+    }
+
+    // Validate email if it's being changed
+    if (email && email !== user.email) {
+      const existingUser = await User.findOne({ email, accountVerified: true });
+      if (existingUser) {
+        return next(
+          new ErrorHandler(
+            "Email already in use by another verified account",
+            400
+          )
+        );
+      }
+    }
+
+    // Prevent admin from demoting themselves
+    if (
+      req.user._id.toString() === id &&
+      role === "user" &&
+      user.role === "admin"
+    ) {
+      return next(
+        new ErrorHandler("You cannot demote yourself from admin role", 403)
+      );
+    }
+
+    // Update user fields
+    const updatedFields = {};
+    if (name) updatedFields.name = name;
+    if (email) updatedFields.email = email;
+    if (phone !== undefined) updatedFields.phone = phone;
+    if (role) updatedFields.role = role;
+    if (status) updatedFields.status = status;
+    if (accountVerified !== undefined)
+      updatedFields.accountVerified = accountVerified;
+
+    const updatedUser = await User.findByIdAndUpdate(
+      id,
+      { $set: updatedFields },
+      { new: true, runValidators: true }
+    ).select(
+      "-password -verificationCode -resetPasswordToken -resetPasswordExpire"
+    );
+
+    res.status(200).json({
+      success: true,
+      message: "User updated successfully",
+      user: updatedUser,
+    });
+  } catch (error) {
+    console.error("Update user error:", error);
+    next(new ErrorHandler("Failed to update user", 500));
+  }
+});
+
+// Bulk update user status
+export const bulkUpdateUserStatus = catchAsyncError(async (req, res, next) => {
+  try {
+    const { userIds, status } = req.body;
+
+    // Check if user is admin
+    if (req.user.role !== "admin") {
+      return res.status(403).json({
+        success: false,
+        message: "Unauthorized access",
+      });
+    }
+
+    if (!userIds || !Array.isArray(userIds) || userIds.length === 0) {
+      return next(new ErrorHandler("User IDs are required", 400));
+    }
+
+    if (!status || !["active", "inactive", "suspended"].includes(status)) {
+      return next(new ErrorHandler("Invalid status value", 400));
+    }
+
+    // Update user status
+    const result = await User.updateMany(
+      { _id: { $in: userIds } },
+      { $set: { status } }
+    );
+
+    res.status(200).json({
+      success: true,
+      message: `${result.modifiedCount} users updated to ${status} status`,
+      modifiedCount: result.modifiedCount,
+    });
+  } catch (error) {
+    console.error("Bulk update user status error:", error);
+    next(new ErrorHandler("Failed to update user status", 500));
+  }
+});
+
+// Get user statistics for dashboard
+export const getUserStats = catchAsyncError(async (req, res, next) => {
+  try {
+    // Check if user is admin
+    if (req.user.role !== "admin") {
+      return res.status(403).json({
+        success: false,
+        message: "Unauthorized access",
+      });
+    }
+
+    const totalUsers = await User.countDocuments();
+    const activeUsers = await User.countDocuments({ status: "active" });
+    const inactiveUsers = await User.countDocuments({ status: "inactive" });
+    const suspendedUsers = await User.countDocuments({ status: "suspended" });
+    const verifiedUsers = await User.countDocuments({ accountVerified: true });
+    const googleUsers = await User.countDocuments({ signUpWithGoogle: true });
+    const adminUsers = await User.countDocuments({ role: "admin" });
+
+    // Recent signups - last 30 days
+    const thirtyDaysAgo = new Date();
+    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+    const recentSignups = await User.countDocuments({
+      createdAt: { $gte: thirtyDaysAgo },
+    });
+
+    // Recent activity - last 7 days
+    const sevenDaysAgo = new Date();
+    sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+    const recentActive = await User.countDocuments({
+      last_login_date: { $gte: sevenDaysAgo },
+    });
+
+    res.status(200).json({
+      success: true,
+      stats: {
+        total: totalUsers,
+        active: activeUsers,
+        inactive: inactiveUsers,
+        suspended: suspendedUsers,
+        verified: verifiedUsers,
+        googleUsers,
+        adminUsers,
+        recentSignups,
+        recentActive,
+      },
+    });
+  } catch (error) {
+    console.error("Get user stats error:", error);
+    next(new ErrorHandler("Failed to fetch user statistics", 500));
+  }
+});
+
+// Get latest users for dashboard
+export const getLatestUsers = catchAsyncError(async (req, res, next) => {
+  try {
+    // Check if user is admin
+    if (req.user.role !== "admin") {
+      return res.status(403).json({
+        success: false,
+        message: "Unauthorized access",
+      });
+    }
+
+    const limit = parseInt(req.query.limit) || 5;
+
+    const latestUsers = await User.find()
+      .sort({ createdAt: -1 })
+      .limit(limit)
+      .select("name email avatar createdAt status accountVerified");
+
+    res.status(200).json({
+      success: true,
+      users: latestUsers,
+    });
+  } catch (error) {
+    console.error("Get latest users error:", error);
+    next(new ErrorHandler("Failed to fetch latest users", 500));
+  }
 });

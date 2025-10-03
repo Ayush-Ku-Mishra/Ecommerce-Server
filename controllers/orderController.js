@@ -389,6 +389,13 @@ export const createCODOrder = async (req, res) => {
 // Get Order Details
 export const getAllOrdersForAdmin = async (req, res) => {
   try {
+    // Check if user is admin
+    if (req.user.role !== "admin") {
+      return res.status(403).json({
+        success: false,
+        message: "Unauthorized access",
+      });
+    }
     console.log("=== GET ALL ORDERS FOR ADMIN ===");
 
     // Fetch ALL orders from database (not filtered by userId)
@@ -547,6 +554,9 @@ export const updateOrderStatus = async (req, res) => {
     if (status === "delivered" && currentOrder.status !== "delivered") {
       console.log("Order delivered - updating stock and sales");
       await updateProductStockAndSales(currentOrder.products);
+    } else if (currentOrder.status === "delivered" && status !== "delivered") {
+      console.log("Order changed from delivered - reverting stock and sales");
+      await revertProductStockAndSales(currentOrder.products);
     }
 
     // Business logic: Different progression for COD vs Online payments
@@ -718,7 +728,7 @@ export const updateOrderStatus = async (req, res) => {
   }
 };
 
-const updateProductStockAndSales = async (products) => {
+export const updateProductStockAndSales = async (products) => {
   console.log("Starting stock and sales update for products:", products);
 
   for (const orderItem of products) {
@@ -785,6 +795,74 @@ const updateProductStockAndSales = async (products) => {
       });
     } catch (error) {
       console.error(`Error updating product ${orderItem.productId}:`, error);
+    }
+  }
+};
+
+export const revertProductStockAndSales = async (products) => {
+  console.log("Starting stock and sales reversion for products:", products);
+
+  for (const orderItem of products) {
+    try {
+      console.log("Reverting order item:", orderItem);
+
+      const productId = orderItem.productId.split("_")[0]; // Get base product ID
+
+      const product = await ProductModel.findById(productId);
+      if (!product) {
+        console.log(`Product not found: ${productId}`);
+        continue;
+      }
+
+      console.log("Before reversion:", {
+        productId,
+        mainStock: product.stock,
+        selectedSize: orderItem.selectedSize,
+        dressSizes: product.dressSizes,
+        shoesSizes: product.shoesSizes,
+        sales: product.sales,
+        quantity: orderItem.quantity,
+      });
+
+      // Revert main stock (increase)
+      product.stock = product.stock + orderItem.quantity;
+
+      // Revert size-specific stock if size is selected (increase)
+      if (orderItem.selectedSize) {
+        if (product.dressSizes?.length > 0) {
+          const sizeIndex = product.dressSizes.findIndex(
+            (s) => s.size === orderItem.selectedSize
+          );
+          if (sizeIndex !== -1) {
+            product.dressSizes[sizeIndex].stock =
+              product.dressSizes[sizeIndex].stock + orderItem.quantity;
+          }
+        } else if (product.shoesSizes?.length > 0) {
+          const sizeIndex = product.shoesSizes.findIndex(
+            (s) => s.size === orderItem.selectedSize
+          );
+          if (sizeIndex !== -1) {
+            product.shoesSizes[sizeIndex].stock =
+              product.shoesSizes[sizeIndex].stock + orderItem.quantity;
+          }
+        }
+      }
+
+      // Revert sales count (decrease)
+      product.sales = Math.max(0, (product.sales || 0) - orderItem.quantity);
+
+      await product.save();
+
+      console.log("After reversion:", {
+        productId,
+        mainStock: product.stock,
+        selectedSize: orderItem.selectedSize,
+        dressSizes: product.dressSizes,
+        shoesSizes: product.shoesSizes,
+        sales: product.sales,
+      });
+    } catch (error) {
+      console.error(`Error reverting product ${orderItem.productId}:`, error);
     }
   }
 };

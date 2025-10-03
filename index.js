@@ -84,6 +84,7 @@ import SliderRouter from "./routes/SliderRouter.js";
 import orderRouter from "./routes/orderRouter.js";
 import notificationRouter from "./routes/notificationRoutes.js";
 import clientNotificationRouter from "./routes/clientNotificationRoutes.js";
+import returnRouter from "./routes/returnRoutes.js";
 
 const localOrigins = [
   process.env.FRONTEND_CLIENT_URL_LOCAL,
@@ -149,6 +150,7 @@ app.use("/api/v1/reviews", reviewRouter);
 app.use("/api/v1/payment", orderRouter);
 app.use("/api/v1/notifications", notificationRouter);
 app.use("/api/v1/client-notifications", clientNotificationRouter);
+app.use("/api/v1/returns", returnRouter);
 
 app.get("/debug/env", (req, res) => {
   res.json({

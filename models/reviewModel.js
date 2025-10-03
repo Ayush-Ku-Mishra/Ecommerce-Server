@@ -6,6 +6,14 @@ const reviewSchema = new mongoose.Schema({
     type: mongoose.Schema.Types.ObjectId,
     ref: "Product",
     required: true,
+    index: true,
+  },
+  
+  // Order reference (for verified purchases)
+  orderId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: "Order",
+    index: true,
   },
   
   // User reference
@@ -13,6 +21,7 @@ const reviewSchema = new mongoose.Schema({
     type: mongoose.Schema.Types.ObjectId,
     ref: "User",
     required: true,
+    index: true,
   },
   
   // Review details
@@ -33,10 +42,10 @@ const reviewSchema = new mongoose.Schema({
     type: String,
     required: true,
     trim: true,
-    maxLength: 2000,
+    maxLength: 1000, // Changed from 2000 to 1000 as per your requirement
   },
   
-  // Image URLs from Cloudinary
+  // Image URLs from Cloudinary (max 5 images)
   images: [{
     url: {
       type: String,
@@ -172,12 +181,20 @@ reviewSchema.index({ isHidden: 1 });
 reviewSchema.index({ isVerifiedPurchase: 1 });
 reviewSchema.index({ helpfulCount: -1 });
 
+// Compound unique index to prevent duplicate reviews per product-user-order
+reviewSchema.index(
+  { productId: 1, userId: 1, orderId: 1 },
+  { 
+    unique: true,
+    partialFilterExpression: { orderId: { $exists: true } }
+  }
+);
+
 // Virtual for display name
 reviewSchema.virtual('displayName').get(function() {
   if (this.isAnonymous) {
     return 'Anonymous';
   }
-  // You'll need to populate user to access user.name
   return this.userId?.name || 'User';
 });
 
@@ -186,10 +203,16 @@ reviewSchema.virtual('netHelpfulScore').get(function() {
   return this.helpfulCount - this.unhelpfulCount;
 });
 
-// Pre-save middleware to update helpful counts
+// Pre-save middleware to update helpful counts and validate images
 reviewSchema.pre('save', function(next) {
   this.helpfulCount = this.likes.length;
   this.unhelpfulCount = this.dislikes.length;
+  
+  // Ensure max 5 images
+  if (this.images && this.images.length > 5) {
+    this.images = this.images.slice(0, 5);
+  }
+  
   next();
 });
 
@@ -198,7 +221,7 @@ reviewSchema.statics.getAverageRating = async function(productId) {
   const result = await this.aggregate([
     {
       $match: {
-        productId: mongoose.Types.ObjectId(productId),
+        productId: new mongoose.Types.ObjectId(productId),
         isHidden: false,
       }
     },

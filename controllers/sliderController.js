@@ -7,8 +7,15 @@ import SliderModel from "../models/sliderModel.js";
 // Upload multiple images to cloudinary
 export const uploadImages = catchAsyncError(async (req, res, next) => {
   try {
+    // Check if user is admin
+    if (req.user.role !== "admin") {
+      return res.status(403).json({
+        success: false,
+        message: "Unauthorized access",
+      });
+    }
     const files = req.files;
-    
+
     if (!files || files.length === 0) {
       return next(new ErrorHandler("No files provided for upload.", 400));
     }
@@ -21,7 +28,7 @@ export const uploadImages = catchAsyncError(async (req, res, next) => {
       overwrite: false,
       folder: "sliders", // Organize images in folders
       quality: "auto",
-      fetch_format: "auto"
+      fetch_format: "auto",
     };
 
     for (const file of files) {
@@ -97,11 +104,18 @@ export const removeImageFromCloudinary = catchAsyncError(
 
 // Create new slider (simplified)
 export const createSlider = catchAsyncError(async (req, res, next) => {
-  const { imageUrl, type = 'simple', order } = req.body;
+  // Check if user is admin
+  if (req.user.role !== "admin") {
+    return res.status(403).json({
+      success: false,
+      message: "Unauthorized access",
+    });
+  }
+  const { imageUrl, type = "simple", order } = req.body;
 
   // Validation
   if (!imageUrl) {
-    return next(new ErrorHandler('Image URL is required', 400));
+    return next(new ErrorHandler("Image URL is required", 400));
   }
 
   // If no order specified, make it the last one
@@ -114,14 +128,14 @@ export const createSlider = catchAsyncError(async (req, res, next) => {
   const slider = new SliderModel({
     type,
     imageUrl,
-    order: sliderOrder
+    order: sliderOrder,
   });
 
   await slider.save();
 
   res.status(201).json({
     success: true,
-    message: 'Slider created successfully',
+    message: "Slider created successfully",
     slider,
   });
 });
@@ -129,11 +143,14 @@ export const createSlider = catchAsyncError(async (req, res, next) => {
 // Get all sliders (simplified - no active/inactive distinction)
 export const getAllSliders = catchAsyncError(async (req, res, next) => {
   const { type } = req.query;
-  
+
   const filter = {};
   if (type) filter.type = type;
 
-  const sliders = await SliderModel.find(filter).sort({ order: 1, createdAt: -1 });
+  const sliders = await SliderModel.find(filter).sort({
+    order: 1,
+    createdAt: -1,
+  });
 
   res.status(200).json({
     success: true,
@@ -147,7 +164,7 @@ export const getSliderById = catchAsyncError(async (req, res, next) => {
   const slider = await SliderModel.findById(req.params.id);
 
   if (!slider) {
-    return next(new ErrorHandler('Slider not found', 404));
+    return next(new ErrorHandler("Slider not found", 404));
   }
 
   res.status(200).json({
@@ -158,9 +175,16 @@ export const getSliderById = catchAsyncError(async (req, res, next) => {
 
 // Update slider by ID
 export const updateSlider = catchAsyncError(async (req, res, next) => {
+  // Check if user is admin
+  if (req.user.role !== "admin") {
+    return res.status(403).json({
+      success: false,
+      message: "Unauthorized access",
+    });
+  }
   let slider = await SliderModel.findById(req.params.id);
   if (!slider) {
-    return next(new ErrorHandler('Slider not found', 404));
+    return next(new ErrorHandler("Slider not found", 404));
   }
 
   const updatedData = { ...req.body };
@@ -172,7 +196,7 @@ export const updateSlider = catchAsyncError(async (req, res, next) => {
 
   res.status(200).json({
     success: true,
-    message: 'Slider updated successfully',
+    message: "Slider updated successfully",
     slider,
   });
 });
@@ -182,7 +206,7 @@ export const updateSliderOrder = catchAsyncError(async (req, res, next) => {
   const { slidersOrder } = req.body; // Array of { id, order }
 
   if (!Array.isArray(slidersOrder)) {
-    return next(new ErrorHandler('slidersOrder must be an array', 400));
+    return next(new ErrorHandler("slidersOrder must be an array", 400));
   }
 
   try {
@@ -194,19 +218,26 @@ export const updateSliderOrder = catchAsyncError(async (req, res, next) => {
 
     res.status(200).json({
       success: true,
-      message: 'Slider order updated successfully',
+      message: "Slider order updated successfully",
     });
   } catch (error) {
-    return next(new ErrorHandler('Failed to update slider order', 500));
+    return next(new ErrorHandler("Failed to update slider order", 500));
   }
 });
 
 // Delete slider by ID (with Cloudinary cleanup)
 export const deleteSlider = catchAsyncError(async (req, res, next) => {
+  // Check if user is admin
+  if (req.user.role !== "admin") {
+    return res.status(403).json({
+      success: false,
+      message: "Unauthorized access",
+    });
+  }
   const slider = await SliderModel.findById(req.params.id);
 
   if (!slider) {
-    return next(new ErrorHandler('Slider not found', 404));
+    return next(new ErrorHandler("Slider not found", 404));
   }
 
   // Delete associated image from cloudinary
@@ -215,7 +246,7 @@ export const deleteSlider = catchAsyncError(async (req, res, next) => {
       const urlParts = slider.imageUrl.split("/");
       const imageWithExtension = urlParts[urlParts.length - 1];
       const publicId = imageWithExtension.split(".")[0];
-      
+
       // Include folder path if exists
       const folderIndex = urlParts.indexOf("sliders");
       let fullPublicId = publicId;
@@ -223,7 +254,7 @@ export const deleteSlider = catchAsyncError(async (req, res, next) => {
         const folderPath = urlParts.slice(folderIndex, -1).join("/");
         fullPublicId = `${folderPath}/${publicId}`;
       }
-      
+
       await cloudinary.uploader.destroy(fullPublicId);
     }
   } catch (error) {
@@ -234,16 +265,16 @@ export const deleteSlider = catchAsyncError(async (req, res, next) => {
 
   res.status(200).json({
     success: true,
-    message: 'Slider deleted successfully',
+    message: "Slider deleted successfully",
   });
 });
 
 // Batch create sliders (useful for multiple image upload)
 export const batchCreateSliders = catchAsyncError(async (req, res, next) => {
-  const { imageUrls, type = 'simple' } = req.body;
+  const { imageUrls, type = "simple" } = req.body;
 
   if (!Array.isArray(imageUrls) || imageUrls.length === 0) {
-    return next(new ErrorHandler('imageUrls array is required', 400));
+    return next(new ErrorHandler("imageUrls array is required", 400));
   }
 
   // Get the current highest order
@@ -256,9 +287,9 @@ export const batchCreateSliders = catchAsyncError(async (req, res, next) => {
     const slider = new SliderModel({
       type,
       imageUrl,
-      order: currentOrder
+      order: currentOrder,
     });
-    
+
     const savedSlider = await slider.save();
     sliders.push(savedSlider);
   }
@@ -273,12 +304,12 @@ export const batchCreateSliders = catchAsyncError(async (req, res, next) => {
 // Get sliders for frontend display (public route)
 export const getPublicSliders = catchAsyncError(async (req, res, next) => {
   const { type, limit } = req.query;
-  
+
   const filter = {};
   if (type) filter.type = type;
 
   let query = SliderModel.find(filter).sort({ order: 1, createdAt: -1 });
-  
+
   if (limit) {
     query = query.limit(parseInt(limit));
   }

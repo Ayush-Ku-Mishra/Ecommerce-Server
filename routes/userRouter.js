@@ -23,6 +23,11 @@ import {
   setPassword,
   getUsersByMonth,
   verifyForgotPasswordOTP,
+  getUserStats,
+  getLatestUsers,
+  getSingleUser,
+  updateUser,
+  bulkUpdateUserStatus,
 } from "../controllers/userController.js";
 import { isAuthenticated } from "../middlewares/auth.js";
 import { googleAuth } from "../controllers/authController.js";
@@ -71,5 +76,11 @@ router.put("/set-password", isAuthenticated, setPassword);
 
 router.get("/users-by-month", isAuthenticated, getUsersByMonth);
 router.post("/password/verify-otp", verifyForgotPasswordOTP);
+
+router.get("/stats", isAuthenticated, getUserStats);
+router.get("/latest", isAuthenticated, getLatestUsers);
+router.get("/:id", isAuthenticated, getSingleUser);
+router.patch("/:id", isAuthenticated, updateUser);
+router.patch("/bulk-status-update", isAuthenticated, bulkUpdateUserStatus);
 
 export default router;

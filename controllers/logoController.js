@@ -1,7 +1,7 @@
 import ErrorHandler from "../middlewares/error.js";
 import { catchAsyncError } from "../middlewares/catchAsyncError.js";
 import { v2 as cloudinary } from "cloudinary";
-import { Logo } from "../models/logoModel.js"; 
+import { Logo } from "../models/logoModel.js";
 import fs from "fs";
 
 // Helper function to extract public ID from Cloudinary URL
@@ -24,7 +24,7 @@ const deleteFromCloudinary = async (imageUrl) => {
     if (!publicId) {
       throw new Error("Invalid image URL");
     }
-    
+
     const result = await cloudinary.uploader.destroy(publicId);
     return result;
   } catch (error) {
@@ -35,6 +35,13 @@ const deleteFromCloudinary = async (imageUrl) => {
 
 export const uploadImages = catchAsyncError(async (req, res, next) => {
   try {
+    // Check if user is admin
+    if (req.user.role !== "admin") {
+      return res.status(403).json({
+        success: false,
+        message: "Unauthorized access",
+      });
+    }
     const files = req.files;
     const imagesArr = [];
 
@@ -105,93 +112,117 @@ export const removeImageFromCloudinary = catchAsyncError(
 export const getAllLogos = catchAsyncError(async (req, res, next) => {
   try {
     const logos = await Logo.find().sort({ createdAt: -1 });
-    
+
     res.status(200).json({
       success: true,
       logos,
-      message: "Logos retrieved successfully"
+      message: "Logos retrieved successfully",
     });
   } catch (error) {
-    console.error('Get logos error:', error);
-    next(new ErrorHandler('Failed to fetch logos', 500));
+    console.error("Get logos error:", error);
+    next(new ErrorHandler("Failed to fetch logos", 500));
   }
 });
 
 // Create new logo
 export const createLogo = catchAsyncError(async (req, res, next) => {
   try {
-    const { url, name } = req.body;
-    
-    if (!url) {
-      return next(new ErrorHandler('Logo URL is required', 400));
+    // Check if user is admin
+    if (req.user.role !== "admin") {
+      return res.status(403).json({
+        success: false,
+        message: "Unauthorized access",
+      });
     }
-    
+    const { url, name } = req.body;
+
+    if (!url) {
+      return next(new ErrorHandler("Logo URL is required", 400));
+    }
+
     const logo = await Logo.create({
       url,
-      name: name || 'Untitled Logo',
-      uploadedBy: req.user._id
+      name: name || "Untitled Logo",
+      uploadedBy: req.user._id,
     });
-    
+
     res.status(201).json({
       success: true,
       logo,
-      message: "Logo created successfully"
+      message: "Logo created successfully",
     });
   } catch (error) {
-    console.error('Create logo error:', error);
-    next(new ErrorHandler('Failed to create logo', 500));
+    console.error("Create logo error:", error);
+    next(new ErrorHandler("Failed to create logo", 500));
   }
 });
 
 // Update logo
 export const updateLogo = catchAsyncError(async (req, res, next) => {
   try {
+    // Check if user is admin
+    if (req.user.role !== "admin") {
+      return res.status(403).json({
+        success: false,
+        message: "Unauthorized access",
+      });
+    }
     const { id } = req.params;
     const { url, name } = req.body;
-    
+
     const logo = await Logo.findById(id);
     if (!logo) {
-      return next(new ErrorHandler('Logo not found', 404));
+      return next(new ErrorHandler("Logo not found", 404));
     }
-    
+
     // If URL is being updated, delete the old image from Cloudinary
     if (url && url !== logo.url) {
       try {
         await deleteFromCloudinary(logo.url);
         console.log("Old logo image deleted from Cloudinary");
       } catch (error) {
-        console.warn("Failed to delete old image from Cloudinary:", error.message);
+        console.warn(
+          "Failed to delete old image from Cloudinary:",
+          error.message
+        );
         // Continue with update even if old image deletion fails
       }
     }
-    
+
     logo.url = url || logo.url;
     logo.name = name || logo.name;
     logo.updatedAt = new Date();
-    
+
     await logo.save();
-    
+
     res.status(200).json({
       success: true,
       logo,
-      message: "Logo updated successfully"
+      message: "Logo updated successfully",
     });
   } catch (error) {
-    console.error('Update logo error:', error);
-    next(new ErrorHandler('Failed to update logo', 500));
+    console.error("Update logo error:", error);
+    next(new ErrorHandler("Failed to update logo", 500));
   }
 });
 
 // Delete logo
 export const deleteLogo = catchAsyncError(async (req, res, next) => {
   try {
+    // Check if user is admin
+    if (req.user.role !== "admin") {
+      return res.status(403).json({
+        success: false,
+        message: "Unauthorized access",
+      });
+    }
     const { id } = req.params;
-    
+
     const logo = await Logo.findById(id);
     if (!logo) {
-      return next(new ErrorHandler('Logo not found', 404));
+      return next(new ErrorHandler("Logo not found", 404));
     }
-    
+
     // Delete image from Cloudinary first
     try {
       await deleteFromCloudinary(logo.url);
@@ -200,16 +231,16 @@ export const deleteLogo = catchAsyncError(async (req, res, next) => {
       console.warn("Failed to delete image from Cloudinary:", error.message);
       // Continue with database deletion even if Cloudinary deletion fails
     }
-    
+
     // Delete from database
     await Logo.findByIdAndDelete(id);
-    
+
     res.status(200).json({
       success: true,
-      message: "Logo deleted successfully"
+      message: "Logo deleted successfully",
     });
   } catch (error) {
-    console.error('Delete logo error:', error);
-    next(new ErrorHandler('Failed to delete logo', 500));
+    console.error("Delete logo error:", error);
+    next(new ErrorHandler("Failed to delete logo", 500));
   }
 });

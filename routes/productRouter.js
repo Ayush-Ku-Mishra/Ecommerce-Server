@@ -26,6 +26,8 @@ import {
   searchProducts,
   getPopularSearches,
   getProductStock,
+  getAvailableSizes,
+  getAllProductsForClient,
 } from "../controllers/productController.js";
 
 const ProductRouter = express.Router();
@@ -37,7 +39,8 @@ ProductRouter.post(
   uploadImages
 );
 ProductRouter.post("/create", isAuthenticated, createProduct);
-ProductRouter.get("/getAllProducts", getAllProducts);
+ProductRouter.get("/getAllProducts", isAuthenticated, getAllProducts);
+ProductRouter.get("/getAllProductsForClient", getAllProductsForClient);
 
 ProductRouter.get("/getAllProductsByCatId/:id", getAllProductsByCatId);
 ProductRouter.get("/getAllProductsByCatName", getAllProductsByCatName);
@@ -85,5 +88,9 @@ ProductRouter.get("/popular-searches", getPopularSearches);
 // ProductRouter.get("/filter-options", getFilterOptions);
 
 ProductRouter.get("/:id/stock", getProductStock);
+
+ProductRouter.post("/available-sizes", isAuthenticated, getAvailableSizes);
+
+
 
 export default ProductRouter;

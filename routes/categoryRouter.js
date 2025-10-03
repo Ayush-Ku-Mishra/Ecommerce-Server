@@ -11,6 +11,7 @@ import {
   removeImageFromCloudinary,
   deleteCategory,
   updateCategory,
+  getCategoriesForAdmin,
 } from "../controllers/categoryController.js";
 
 const CategoryRouter = express.Router();
@@ -26,6 +27,7 @@ CategoryRouter.post(
 CategoryRouter.post("/createCategory", isAuthenticated, createCategory);
 
 CategoryRouter.get("/get-categories", getCategories);
+CategoryRouter.get("/get-categoriesForAdmin", isAuthenticated, getCategoriesForAdmin);
 
 CategoryRouter.get("/get/count", getCategoriesCount);
 CategoryRouter.get("/get/count/subCat", getSubCategoriesCount);
