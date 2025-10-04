@@ -966,3 +966,180 @@ export const removeReviewImage = catchAsyncError(async (req, res, next) => {
     next(new ErrorHandler("Failed to remove image", 500));
   }
 });
+
+
+// Get all reviews (admin)
+export const getAllReviews = catchAsyncError(async (req, res, next) => {
+  try {
+    // Only admin can access this
+    if (req.user.role !== "admin") {
+      return next(new ErrorHandler("Access denied. Admin only.", 403));
+    }
+
+    const { page = 1, limit = 100, sortBy = "newest" } = req.query;
+    const skip = (page - 1) * limit;
+    const limitNum = parseInt(limit);
+
+    // Build sort
+    let sort = {};
+    switch (sortBy) {
+      case "oldest":
+        sort = { createdAt: 1 };
+        break;
+      case "highest":
+        sort = { rating: -1, createdAt: -1 };
+        break;
+      case "lowest":
+        sort = { rating: 1, createdAt: -1 };
+        break;
+      case "newest":
+      default:
+        sort = { createdAt: -1 };
+    }
+
+    const reviews = await ReviewModel.find()
+      .populate("userId", "name email")
+      .populate("productId", "name")
+      .populate("reports.reportedBy", "name email")
+      .sort(sort)
+      .skip(skip)
+      .limit(limitNum)
+      .lean();
+    
+    // Get total count
+    const totalReviews = await ReviewModel.countDocuments();
+
+    // Add user interaction data
+    const reviewsWithInteraction = reviews.map((review) => {
+      if (req.user) {
+        const userLiked = review.likes?.some(
+          (like) => like.user?.toString() === req.user._id.toString()
+        );
+        const userDisliked = review.dislikes?.some(
+          (dislike) => dislike.user?.toString() === req.user._id.toString()
+        );
+
+        return {
+          ...review,
+          userInteraction: {
+            isLiked: userLiked || false,
+            isDisliked: userDisliked || false,
+          },
+        };
+      }
+      return review;
+    });
+
+    res.status(200).json({
+      success: true,
+      reviews: reviewsWithInteraction,
+      totalReviews,
+      currentPage: parseInt(page),
+      totalPages: Math.ceil(totalReviews / limitNum),
+      message: "All reviews retrieved successfully",
+    });
+  } catch (error) {
+    console.error("Get all reviews error:", error);
+    next(new ErrorHandler("Failed to fetch reviews", 500));
+  }
+});
+
+
+// Edit response to a review (seller/admin)
+export const editReviewResponse = catchAsyncError(async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const { text } = req.body;
+
+    const review = await ReviewModel.findById(id);
+    if (!review) {
+      return next(new ErrorHandler("Review not found", 404));
+    }
+
+    // Check if user has permission to edit response
+    const userRole = req.user.role;
+    if (userRole !== "admin" && userRole !== "seller") {
+      return next(
+        new ErrorHandler("Only sellers and admins can edit responses", 403)
+      );
+    }
+
+    // Check if we're removing the response (empty text)
+    if (!text || text.trim().length === 0) {
+      // Remove the response
+      review.response = undefined;
+      await review.save();
+      
+      return res.status(200).json({
+        success: true,
+        review,
+        message: "Response removed successfully"
+      });
+    }
+
+    // Otherwise, update the response
+    if (text.length > 1000) {
+      return next(
+        new ErrorHandler("Response cannot exceed 1000 characters", 400)
+      );
+    }
+
+    // Update or create response
+    review.response = {
+      text: text.trim(),
+      respondedBy: req.user._id,
+      respondedAt: new Date(),
+      role: userRole,
+    };
+
+    await review.save();
+    await review.populate("response.respondedBy", "name");
+
+    res.status(200).json({
+      success: true,
+      review,
+      message: "Response updated successfully",
+    });
+  } catch (error) {
+    console.error("Edit review response error:", error);
+    next(new ErrorHandler("Failed to update response", 500));
+  }
+});
+
+// Delete response from a review (seller/admin)
+export const deleteReviewResponse = catchAsyncError(async (req, res, next) => {
+  try {
+    const { id } = req.params;
+
+    const review = await ReviewModel.findById(id);
+    if (!review) {
+      return next(new ErrorHandler("Review not found", 404));
+    }
+
+    // Check if user has permission to delete response
+    const userRole = req.user.role;
+    if (userRole !== "admin" && userRole !== "seller") {
+      return next(
+        new ErrorHandler("Only sellers and admins can manage responses", 403)
+      );
+    }
+
+    // Check if response exists
+    if (!review.response) {
+      return next(new ErrorHandler("No response found for this review", 404));
+    }
+
+    // Remove response
+    review.response = undefined;
+    await review.save();
+
+    res.status(200).json({
+      success: true,
+      review,
+      message: "Response removed successfully",
+    });
+  } catch (error) {
+    console.error("Delete review response error:", error);
+    next(new ErrorHandler("Failed to delete response", 500));
+  }
+});

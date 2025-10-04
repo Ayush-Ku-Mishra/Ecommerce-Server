@@ -14,6 +14,9 @@ import {
   addReviewResponse,
   getReviewAnalytics,
   removeReviewImage,
+  getAllReviews,
+  editReviewResponse,
+  deleteReviewResponse
 } from "../controllers/reviewController.js";
 import { isAuthenticated, authorizeRoles } from "../middlewares/auth.js";
 import upload from "../middlewares/multer.js";
@@ -76,5 +79,27 @@ reviewRouter.get(
   authorizeRoles("admin"),
   getReviewAnalytics
 ); // Get review analytics
+
+reviewRouter.get(
+  "/admin/all",
+  isAuthenticated,
+  authorizeRoles("admin"),
+  getAllReviews
+);
+
+// Add these routes to your router
+reviewRouter.put(
+  "/:id/response/edit",
+  isAuthenticated,
+  authorizeRoles("seller", "admin"),
+  editReviewResponse
+); // Edit or delete response
+
+reviewRouter.delete(
+  "/:id/response",
+  isAuthenticated,
+  authorizeRoles("seller", "admin"),
+  deleteReviewResponse
+); // Delete response
 
 export default reviewRouter;
