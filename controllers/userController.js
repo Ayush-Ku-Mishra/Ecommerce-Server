@@ -931,8 +931,7 @@ export const forgotPassword = catchAsyncError(async (req, res, next) => {
     console.log("3. User found, generating OTP");
     const verificationCode = Math.floor(10000 + Math.random() * 90000);
 
-    const message = `
-      <!DOCTYPE html>
+    const message = `<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
@@ -941,34 +940,22 @@ export const forgotPassword = catchAsyncError(async (req, res, next) => {
 </head>
 <body style="margin: 0; padding: 0; font-family: Arial, sans-serif; background-color: #f7f7f7;">
   <div style="max-width: 600px; margin: 0 auto; padding: 20px; background-color: white;">
-    <!-- Important Notice -->
     <div style="margin-bottom: 15px; padding: 8px; background-color: #f8f8f8; border-radius: 4px; font-size: 12px; color: #666;">
-      <p>This message contains your verification code for Pickora. To ensure you receive our emails in the future, please add <strong>amishra59137@gmail.com</strong> to your contacts.</p>
+      <p>This message contains your verification code for Pickora. Please check your spam folder if you don't see it.</p>
     </div>
-    
     <h2 style="color: #333; text-align: center; margin-top: 30px;">Verification Code</h2>
-    
-    <!-- OTP Container -->
     <div style="margin: 30px auto; padding: 15px; text-align: center; background-color: #f9f9f9; border-radius: 8px;">
-      <p style="font-size: 16px; margin-bottom: 10px;">Your verification code is:</p>
-      <div style="font-size: 30px; font-weight: bold; letter-spacing: 5px; color: #4CAF50; margin: 20px 0;">
-        ${verificationCode}
-      </div>
-      <p style="font-size: 14px; color: #666;">This code will expire in 15 minutes</p>
+      <p style="font-size: 16px; margin-bottom: 10px;">Your code is:</p>
+      <div style="font-size: 30px; font-weight: bold; letter-spacing: 5px; color: #4CAF50; margin: 20px 0;">${verificationCode}</div>
+      <p style="font-size: 14px; color: #666;">Expires in 15 minutes</p>
     </div>
-    
-    <p style="margin-top: 30px; color: #666;">If you did not request this code, you can safely ignore this email.</p>
-    
-    <!-- Security Notice -->
+    <p style="margin-top: 30px; color: #666;">If you didn't request this code, you can ignore this email.</p>
     <div style="margin-top: 30px; padding: 15px; border-top: 1px solid #eee; font-size: 12px; color: #999;">
-      <p>This is an automated message from Pickora. Please do not reply to this email.</p>
-      <p>For account security, never share this verification code with anyone, including Pickora support.</p>
-      <p>If you're having trouble, please visit our <a href="https://pickora.netlify.app/help" style="color: #4CAF50; text-decoration: none;">Help Center</a>.</p>
+      <p>This is an automated message from Pickora. Please do not reply.</p>
     </div>
   </div>
 </body>
-</html>
-    `;
+</html>`;
 
     console.log("4. Attempting to send email");
     try {
