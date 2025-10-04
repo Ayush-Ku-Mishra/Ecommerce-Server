@@ -1,4 +1,4 @@
-import { sendEmail } from "../utils/emailService.js";
+import { sendEmail } from "../utils/sendEmail.js";
 
 export const sendOrderConfirmationEmail = async (userEmail, orderData) => {
   try {

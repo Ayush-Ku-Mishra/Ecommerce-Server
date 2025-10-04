@@ -1,7 +1,7 @@
 import ErrorHandler from "../middlewares/error.js";
 import { catchAsyncError } from "../middlewares/catchAsyncError.js";
 import { User } from "../models/userModel.js";
-import { sendEmail } from "../utils/emailService.js";
+import { sendEmail } from "../utils/sendEmail.js";
 import { sendToken } from "../utils/sendToken.js";
 import twilio from "twilio";
 import crypto from "crypto";
@@ -904,16 +904,6 @@ export const getUser = catchAsyncError(async (req, res, next) => {
 
 export const forgotPassword = catchAsyncError(async (req, res, next) => {
   try {
-    console.log("1. Starting forgot password process");
-    console.log("Email config:", {
-      host: process.env.SMTP_HOST,
-      port: process.env.SMTP_PORT,
-      service: process.env.SMTP_SERVICE,
-      user: process.env.SMTP_MAIL,
-      // Don't log the actual password
-      hasPassword: !!process.env.SMTP_PASSWORD,
-    });
-
     if (!req.body.email) {
       return next(new ErrorHandler("Email is required", 400));
     }

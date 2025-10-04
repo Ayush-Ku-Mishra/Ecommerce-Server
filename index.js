@@ -77,7 +77,6 @@ import CartRouter from "./routes/cartRouter.js";
 import WishlistRouter from "./routes/wishlistRouter.js";
 import AddressRouter from "./routes/addressRouter.js";
 import SizeChartRouter from "./routes/sizeChartRouter.js";
-
 import logoRouter from "./routes/logoRoutes.js";
 import reviewRouter from "./routes/reviewRouter.js";
 import SliderRouter from "./routes/SliderRouter.js";
@@ -86,45 +85,49 @@ import notificationRouter from "./routes/notificationRoutes.js";
 import clientNotificationRouter from "./routes/clientNotificationRoutes.js";
 import returnRouter from "./routes/returnRoutes.js";
 
-const localOrigins = [
-  process.env.FRONTEND_CLIENT_URL_LOCAL,
-  process.env.FRONTEND_ADMIN_URL_LOCAL,
-];
+// Request logger middleware
+app.use((req, res, next) => {
+  console.log(`Request from origin: ${req.headers.origin}`);
+  next();
+});
 
-const prodOrigins = [
-  process.env.FRONTEND_CLIENT_URL_PROD,
-  process.env.FRONTEND_ADMIN_URL_PROD,
-];
-
-// Pick allowed origins based on environment
-const allowedOrigins =
-  process.env.NODE_ENV === "production" ? prodOrigins : localOrigins;
-
+// SINGLE CORS configuration for both development and production
 app.use(
   cors({
-    origin: function (origin, callback) {
-      if (!origin) return callback(null, true); // Allow non-browser requests like Postman
-      if (allowedOrigins.indexOf(origin) === -1) {
-        const msg =
-          "The CORS policy for this site does not allow access from the specified Origin.";
-        return callback(new Error(msg), false);
+    origin: function(origin, callback) {
+      // For development - allow localhost or no origin (like Postman)
+      if (!origin || origin.startsWith('http://localhost:')) {
+        callback(null, true);
+      } 
+      // For production - check against allowed domains
+      else if (process.env.NODE_ENV === 'production') {
+        const allowedOrigins = [
+          process.env.FRONTEND_CLIENT_URL_PROD,
+          process.env.FRONTEND_ADMIN_URL_PROD
+        ];
+        if (allowedOrigins.indexOf(origin) !== -1) {
+          callback(null, true);
+        } else {
+          callback(new Error('Not allowed by CORS'));
+        }
       }
-      return callback(null, true);
+      // Fallback - allow
+      else {
+        callback(null, true);
+      }
     },
     credentials: true,
     methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
     allowedHeaders: [
-      "Content-Type",
-      "Authorization",
-      "Origin",
-      "X-Requested-With",
-      "Accept",
+      "Content-Type", 
+      "Authorization", 
+      "Origin", 
+      "X-Requested-With", 
+      "Accept"
     ],
-    optionsSuccessStatus: 200,
+    optionsSuccessStatus: 204
   })
 );
-
-app.options(/.*/, cors());
 
 // Middleware for cookies, JSON and urlencoded
 app.use(cookieParser());
@@ -137,6 +140,7 @@ app.use(
 );
 app.use(express.urlencoded({ extended: true }));
 
+// Router registrations
 app.use("/api/v1/user", userRouter);
 app.use("/api/v1/category", CategoryRouter);
 app.use("/api/v1/product", ProductRouter);
@@ -173,7 +177,7 @@ connection();
 app.use(errorMiddleware);
 
 // Add server listen
-const PORT = process.env.PORT || 5000;
+const PORT = process.env.PORT || 8000;
 app.listen(PORT, () => {
   console.log(`🚀 Server running on port ${PORT}`);
 });
