@@ -931,40 +931,25 @@ export const forgotPassword = catchAsyncError(async (req, res, next) => {
     console.log("3. User found, generating OTP");
     const verificationCode = Math.floor(10000 + Math.random() * 90000);
 
-    const message = `<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Your Verification Code</title>
-</head>
-<body style="margin: 0; padding: 0; font-family: Arial, sans-serif; background-color: #f7f7f7;">
-  <div style="max-width: 600px; margin: 0 auto; padding: 20px; background-color: white;">
-    <div style="margin-bottom: 15px; padding: 8px; background-color: #f8f8f8; border-radius: 4px; font-size: 12px; color: #666;">
-      <p>This message contains your verification code for Pickora. Please check your spam folder if you don't see it.</p>
-    </div>
-    <h2 style="color: #333; text-align: center; margin-top: 30px;">Verification Code</h2>
-    <div style="margin: 30px auto; padding: 15px; text-align: center; background-color: #f9f9f9; border-radius: 8px;">
-      <p style="font-size: 16px; margin-bottom: 10px;">Your code is:</p>
-      <div style="font-size: 30px; font-weight: bold; letter-spacing: 5px; color: #4CAF50; margin: 20px 0;">${verificationCode}</div>
-      <p style="font-size: 14px; color: #666;">Expires in 15 minutes</p>
-    </div>
-    <p style="margin-top: 30px; color: #666;">If you didn't request this code, you can ignore this email.</p>
-    <div style="margin-top: 30px; padding: 15px; border-top: 1px solid #eee; font-size: 12px; color: #999;">
-      <p>This is an automated message from Pickora. Please do not reply.</p>
-    </div>
-  </div>
-</body>
-</html>`;
+    const message = `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #ddd;">
+        <h2 style="color: #333; text-align: center;">Password Reset OTP</h2>
+        <p style="font-size: 16px;">Your OTP for password reset is:</p>
+        <div style="text-align: center; padding: 20px;">
+          <span style="font-size: 24px; font-weight: bold; color: #4CAF50; padding: 10px 20px; border: 2px solid #4CAF50; border-radius: 5px;">
+            ${verificationCode}
+          </span>
+        </div>
+        <p style="color: #666;">This OTP will expire in 15 minutes.</p>
+        <p style="color: #999; font-size: 12px;">If you didn't request this, please ignore this email.</p>
+      </div>
+    `;
 
     console.log("4. Attempting to send email");
     try {
       await sendEmail({
         email: user.email,
-        subject: `Your Pickora verification code: ${verificationCode.substring(
-          0,
-          2
-        )}XXX`,
+        subject: "Pickora - Password Reset OTP",
         message,
       });
       console.log("5. Email sent successfully");
