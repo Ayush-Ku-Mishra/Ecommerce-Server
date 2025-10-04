@@ -932,24 +932,33 @@ export const forgotPassword = catchAsyncError(async (req, res, next) => {
     const verificationCode = Math.floor(10000 + Math.random() * 90000);
 
     const message = `
-      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #ddd;">
-        <h2 style="color: #333; text-align: center;">Password Reset OTP</h2>
-        <p style="font-size: 16px;">Your OTP for password reset is:</p>
-        <div style="text-align: center; padding: 20px;">
-          <span style="font-size: 24px; font-weight: bold; color: #4CAF50; padding: 10px 20px; border: 2px solid #4CAF50; border-radius: 5px;">
-            ${verificationCode}
-          </span>
-        </div>
-        <p style="color: #666;">This OTP will expire in 15 minutes.</p>
-        <p style="color: #999; font-size: 12px;">If you didn't request this, please ignore this email.</p>
-      </div>
-    `;
+  <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #ddd;">
+    <h2 style="color: #333; text-align: center;">Password Reset OTP</h2>
+    
+    <!-- Spam folder notice -->
+    <p style="font-size: 14px; padding: 8px; background-color: #f8f8f8; border-radius: 4px; color: #666; margin-bottom: 20px;">
+      ⚠️ <strong>Important:</strong> Our emails sometimes go to spam folders. If you don't see this in your inbox, please check your spam/junk folder.
+    </p>
+    
+    <p style="font-size: 16px;">Your OTP for password reset is:</p>
+    <div style="text-align: center; padding: 20px;">
+      <span style="font-size: 24px; font-weight: bold; color: #4CAF50; padding: 10px 20px; border: 2px solid #4CAF50; border-radius: 5px;">
+        ${verificationCode}
+      </span>
+    </div>
+    <p style="color: #666;">This OTP will expire in 15 minutes.</p>
+    <p style="color: #999; font-size: 12px;">If you didn't request this, please ignore this email.</p>
+  </div>
+`;
 
     console.log("4. Attempting to send email");
     try {
       await sendEmail({
         email: user.email,
-        subject: "Pickora - Password Reset OTP",
+        subject: `Pickora verification code: ${verificationCode.substring(
+          0,
+          2
+        )}XXX`,
         message,
       });
       console.log("5. Email sent successfully");
